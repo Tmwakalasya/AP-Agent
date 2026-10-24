@@ -1,39 +1,66 @@
 # Remit-To
 
-Remit-To checks who should be paid, catches conflicting instructions, and shows the evidence before payment. The target user is the carrier-settlement or AP lead at a small freight brokerage. The first demo covers **a clean invoice, a duplicate, and a payment redirect conflicting with an earlier factoring assignment**.
+**Pay the right party. Prove it.**
 
-## Run the groundwork
+An autonomous accounts-payable agent with hard separation of duties. Claude reads the documents and explains; deterministic policy decides; the database enforces who can approve. Proven on freight, where payment-redirect fraud is worst.
 
-Requires Node 22.18+ with native TypeScript support. No install, credentials, network access, or `.env` file is needed for these commands:
+Built solo at Cal Hacks 13.0 (October 2026). Tracks: Hyphenate (Autonomous Systems for Finance), SpacetimeDB, Overall / Most Technically Advanced. No funds move.
+
+## The three stories
+
+| Story | What happens | Result |
+| --- | --- | --- |
+| **Redirect** | A June invoice and an "updated banking" email ask us to pay the carrier directly. A verified March notice of assignment routes payment to a factor. | **HOLD**, rule R2. Factor stays the policy payee. NOA shown. Escalation email drafted. |
+| **Duplicate** | A second invoice for an already-requested load arrives under a new number. Two requests race. | **HOLD**, rule R3. One reservation; the loser's refusal is a committed audit row. |
+| **Clean** | Invoice matches rate con and POD. | Agent requests; a different human approves; runner submits with a persisted idempotency key. `submitted`, then `simulated_settled`. |
+
+## Layout
+
+| Folder | Content |
+| --- | --- |
+| `module/` | SpacetimeDB TypeScript module (`src/`) and the policy core `rules.ts` it shares with the agent. |
+| `agent/` | Agent worker (Claude extraction, explanation, reducer calls), mock payment provider, payment runner. |
+| `web/` | Vite app: landing at `/`, live board at `/app`. `web/mockup/` is the static landing design. |
+| `world/` | Synthetic fixtures, answer key, offline demo and scorer. |
+| `docs/` | Build plan. |
+
+## Run the offline groundwork
+
+Node 22.18+ (native TypeScript). No install, keys or network:
 
 ```sh
-npm test
-npm run demo
-npm run score
+npm test        # 22 policy and scoring tests
+npm run demo    # three stories through the policy core
+npm run score   # 36/36 against the explicit answer key
 ```
 
-The demo evaluates synthetic extracted records, shows evidence and hold reasons, and demonstrates AP self-approval rejection followed by permission for a different controller. The scorer compares 36 development cases (24 clean, 6 duplicate, 6 redirect) against an explicit answer key. A nonmatching result exits with failure.
+## Run the live module locally
 
-**Implemented:** a deterministic, dependency-free policy core; approval checks; synthetic fixtures; an exact-result scorer; and boundary tests. The TypeScript files run through Node's type stripping. This is runtime verification, not a TypeScript compiler check.
+Requires the `spacetime` CLI (2.13+):
 
-**Not implemented:** document extraction, authenticated reducers, durable reservations, Spacetime subscriptions, the UI, or a payment-provider integration. No funds move. The duplicate check reads supplied reservations; concurrency safety requires the future reducer to check and reserve in one transaction. A high score on these synthetic records does not measure extraction quality or real-world fraud detection.
+```sh
+spacetime start                      # local server on :3000
+cd module && npm install
+spacetime publish remit-to --server local --yes
+spacetime sql remit-to "SELECT * FROM decision_log"
+```
+
+## Status
+
+| Component | State |
+| --- | --- |
+| Policy core, approval checks, tests, scorer | Real |
+| SpacetimeDB TypeScript module publishing locally | Real (probe schema; business tables in progress) |
+| Refusal-as-committed-event | Verified on 2.13.0: return commits the audit row, throw rolls it back |
+| Landing page design | Static mockup at `web/mockup/index.html` |
+| Tables, reducers, board, agent, runner | In progress; see `docs/plan.html` for the schedule |
+| Payment provider | In-process mock, labeled. No bank, no sandbox. |
 
 ## Read in this order
 
-1. [Build plan](docs/plan.html): scope, gates, demo, and fallback.
-2. [Contracts](CONTRACTS.md): rules, authority, payment recovery, and integration acceptance checks.
+1. [Build plan](docs/plan.html): positioning, schedule, demo script, judge answers.
+2. [Contracts](CONTRACTS.md): invariants, tables, reducers, lifecycle, acceptance gates.
 3. [Policy core](module/rules.ts): `evaluateSettlement` and `checkApproval`.
-4. [Fixtures](world/fixtures.ts) and [tests](module/rules.test.ts): concrete flows and failure cases.
+4. [Fixtures](world/fixtures.ts) and [tests](module/rules.test.ts).
 
-| Folder | Current content | Next integration task |
-| --- | --- | --- |
-| `module/` | Pure policy and approval checks, tests | Authenticated reducers and durable payment reservations |
-| `agent/` | Reserved for the live worker | Validate extraction against source documents; call reducers using the agent identity |
-| `world/` | Synthetic fixtures, explicit answer key, CLI demo and scorer | Render a few documents; replay only facts visible at the chosen sim time |
-| `web/` | Reserved for the live UI | Board, evidence detail, approval panel; scoreboard can be a small summary |
-
-`CONTRACTS.md` describes the proposed live system. The offline types in `module/rules.ts` are a policy input projection, not a database schema or public service API. Adapt trusted database records into that input; never trust a client's claimed role, reservation list, assignment, bank-change flag, or approval snapshot.
-
-The full stack remains TypeScript, SpacetimeDB, Claude, and optionally the Increase sandbox. Version selection, dependency installation, external documentation checks, and API calls are separate integration work. `.env.example` is only for that later work; use sandbox credentials and keep `.env` untracked.
-
-The proposed Hyphenate and Spacetime track fit, event timing, and domain policy still need confirmation. Nothing has been deployed, committed, or pushed as part of this groundwork.
+Never trust a client's claimed role, reservation list, assignment, bank-change flag or approval snapshot. The reducer derives the actor from `ctx.sender` and recomputes policy from trusted rows.
