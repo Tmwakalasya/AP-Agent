@@ -5,7 +5,12 @@ import { resolve } from "node:path";
 export default defineConfig({
   root: "web",
   publicDir: "public",
-  server: { port: 5173, fs: { allow: [".."] } },
+  server: {
+    port: 5173,
+    fs: { allow: [".."] },
+    // The board's demo controls reach agent/demo-control.ts through here.
+    proxy: { "/demo-control": { target: "http://127.0.0.1:4311", rewrite: p => p.replace(/^\/demo-control/, "") } },
+  },
   build: {
     outDir: "../dist",
     emptyOutDir: true,

@@ -53,14 +53,14 @@ function log(ctx: Ctx, input: LogInput) {
 }
 
 // A refusal is a committed audit row and a normal return. Never throw.
-function requireRole(ctx: Ctx, operation: string, roles: Role[], loadId = ''): Actor | null {
+function requireRole(ctx: Ctx, operation: string, roles: Role[], loadId = '', requestId = 0n): Actor | null {
   const actor = actorFor(ctx);
   if (!actor) {
-    log(ctx, { actor: null, operation, outcome: 'refused', reason: 'Sender identity is not bound to a persona.', loadId });
+    log(ctx, { actor: null, operation, outcome: 'refused', reason: 'Sender identity is not bound to a persona.', loadId, requestId });
     return null;
   }
   if (!roles.includes(actor.role as Role)) {
-    log(ctx, { actor, operation, outcome: 'refused', reason: `Role ${actor.role} may not call ${operation}.`, loadId });
+    log(ctx, { actor, operation, outcome: 'refused', reason: `Role ${actor.role} may not call ${operation}.`, loadId, requestId });
     return null;
   }
   return actor;
@@ -362,9 +362,9 @@ export const requestPayment = spacetimedb.reducer(
 // ---------------------------------------------------------------- approval
 
 function approvalDecision(ctx: Ctx, operation: string, requestId: bigint, snapshot: string, decision: 'approved' | 'rejected', reason: string) {
-  const actor = requireRole(ctx, operation, ['ap_lead', 'controller']);
-  if (!actor) return;
   const request = ctx.db.paymentRequest.id.find(requestId);
+  const actor = requireRole(ctx, operation, ['ap_lead', 'controller'], request?.loadId ?? '', requestId);
+  if (!actor) return;
   if (!request) { log(ctx, { actor, operation, outcome: 'refused', reason: `Unknown request #${requestId}.`, requestId }); return; }
   const projected = projectReview(ctx, request.loadId, request.invoiceDocumentId);
   const current = typeof projected === 'string' ? '' : digestOf(evaluateSettlement(projected.input), projected.bankVersion);
@@ -407,9 +407,9 @@ export const claimPayment = spacetimedb.reducer(
   { requestId: t.u64(), idempotencyKey: t.string() },
   (ctx, { requestId, idempotencyKey }) => {
     const op = 'claim_payment';
-    const actor = requireRole(ctx, op, ['runner']);
-    if (!actor) return;
     const request = ctx.db.paymentRequest.id.find(requestId);
+    const actor = requireRole(ctx, op, ['runner'], request?.loadId ?? '', requestId);
+    if (!actor) return;
     if (!request) { log(ctx, { actor, operation: op, outcome: 'refused', reason: `Unknown request #${requestId}.`, requestId }); return; }
     if (request.state !== 'approved') { log(ctx, { actor, operation: op, outcome: 'refused', reason: `Request #${requestId} is ${request.state}, not approved.`, loadId: request.loadId, requestId }); return; }
     if (idempotencyKey.trim() === '') { log(ctx, { actor, operation: op, outcome: 'refused', reason: 'An idempotency key is required before dispatch.', loadId: request.loadId, requestId }); return; }

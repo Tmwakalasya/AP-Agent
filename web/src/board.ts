@@ -1,11 +1,12 @@
 import type { Session } from "./stdb.ts";
-import { DB, HOST, loadFromUrl, myActor, rememberLoad } from "./stdb.ts";
+import { DB, DEFAULT_TARGET, DEMO, HOST, loadFromUrl, myActor, rememberLoad } from "./stdb.ts";
 import { auditFor, documentsFor, items, lastActionBy, money, shortDate, clock, STATUS_LABEL } from "./model.ts";
 import type { Item, Status } from "./model.ts";
 import { checkApproval, RULE_LABELS } from "../../module/rules.ts";
 import type { RuleId } from "../../module/rules.ts";
 
 export type BoardOptions = { compact?: boolean; readOnly?: boolean };
+type Notice = { title?: string; text: string; kind: "ok" | "refused" };
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 const badgeClass = (s: Status) => ({
@@ -19,13 +20,27 @@ const extractionFor = (db: Session["conn"]["db"], documentId: string | null | un
   documentId ? [...db.extraction.iter()].find(e => e.documentId === documentId) : undefined;
 const STEPS: Array<[string, string]> = [["pending", "requested"], ["approved", "approved"], ["submitting", "claimed"], ["submitted", "submitted"], ["simulated_settled", "settled (mock)"]];
 
+// The demo controls call agent/demo-control.ts (proxied by Vite), which acts
+// as the agent through the same reducers. The board never holds that token.
+class DemoControlError extends Error {}
+type DemoOutcome = { outcome: string; reason: string; request_id: string | null };
+type DemoResult = { error?: string; outcomes?: DemoOutcome[]; reserved?: number };
+async function demoControl(path: string): Promise<DemoResult> {
+  const down = "Demo control is not running. npm run demo:up starts it, or npm run demo:control on its own.";
+  let res: Response;
+  try { res = await fetch(`/demo-control/${path}`, { method: "POST" }); } catch { throw new DemoControlError(down); }
+  const body = await res.json().catch(() => null) as DemoResult | null;
+  if (!res.ok || !body) throw new DemoControlError(body?.error ?? down);
+  return body;
+}
+
 export class Board {
   private selected: string | null = null;
   private prevStatus = new Map<string, Status>();
   private flashing = new Set<string>();
   private lastDetailKey = "";
   private busy = false;
-  private notice: { text: string; kind: "ok" | "refused" } | null = null;
+  private notice: Notice | null = null;
 
   constructor(private root: HTMLElement, private session: Session, private opts: BoardOptions = {}) {
     root.classList.add("board");
@@ -81,8 +96,8 @@ export class Board {
             <span class="badge ${badgeClass(i.status)}">${esc(STATUS_LABEL[i.status])}</span>
           </div>`).join("")}
         <div class="b-head audit-head"><span>Audit</span><span>decision_log · live</span></div>
-        <div class="audit">${auditFor(session.conn, undefined, this.opts.compact ? 6 : 12).map(l => `
-          <div class="audit-row ${l.outcome}" title="${esc(l.reason)}"><span class="t">${clock(l.at)}</span> <span class="who">${esc(l.actorId.replace("A-", ""))}</span> ${esc(l.operation.replace(/_/g, " "))} ${l.loadId ? esc(l.loadId) : ""} <b>${esc(l.outcome)}</b></div>`).join("")}
+        <div class="audit">${auditFor(session.conn, undefined, this.opts.compact ? 6 : DEMO ? 14 : 12).map(l => `
+          <div class="audit-row ${l.outcome}" title="${esc(l.reason)}"><span class="t">${clock(l.at)}</span> <span class="who">${esc(l.actorId.replace("A-", ""))}</span> ${esc(l.operation.replace(/_/g, " "))} ${l.loadId ? esc(l.loadId) : ""} <b>${esc(l.outcome)}</b>${DEMO && l.outcome === "refused" ? `<span class="why">${esc(l.reason)}</span>` : ""}</div>`).join("")}
         </div>
       </div>
       <div class="b-col b-center ${animateDetail ? "anim" : ""}">${sel ? this.detail(sel) : `<div class="b-muted">select a load</div>`}</div>
@@ -233,10 +248,27 @@ export class Board {
         <button class="b-btn ${hint.can && !this.busy ? "" : "disabled"}" data-act="reject" ${hint.can && !this.busy ? "" : "disabled"}>reject</button>
         ${canRequest ? `<button class="b-btn" data-act="request">request payment</button>` : ""}
       `}
-      ${this.notice ? `<div class="refusal ${this.notice.kind}">${esc(this.notice.text)}</div>` :
+      ${this.notice ? `<div class="refusal ${this.notice.kind}">${this.notice.title ? `<b>${esc(this.notice.title)}</b>` : ""}${esc(this.notice.text)}</div>` :
         last ? `<div class="refusal ${last.outcome === "refused" ? "refused" : "ok"}"><b>database said: ${esc(last.operation.replace(/_/g, " "))} → ${esc(last.outcome)}</b>${esc(last.reason)}</div>` : ""}
       ${me?.role === "controller" && i ? `<div class="tools"><div class="b-head"><span>Controller tools</span></div><button class="b-btn small" data-act="bank">change ${esc(i.load.carrierId)} bank destination</button><div class="b-muted small">Bumps the bank version. Any approval bound to the old version goes stale and cannot dispatch.</div></div>` : ""}
+      ${me?.role === "controller" && i && DEFAULT_TARGET ? this.demoControls(i) : ""}
     `;
+  }
+
+  private demoControls(i: Item): string {
+    const ready = i.status === "ready" && !!i.invoiceDocId;
+    const pending = i.request?.state === "pending";
+    if (!ready && !pending) return "";
+    const off = this.busy ? "disabled" : "";
+    return `
+      <div class="tools demo-tools">
+        <div class="b-head"><span>Demo controls</span><span>run as the agent</span></div>
+        ${ready ? `<button class="b-btn small ${off}" data-act="race" ${off}>race: two agent requests at once</button>
+          <div class="b-muted small">Sends request_payment for ${esc(i.loadId)} twice, on two agent connections, in the same instant. The database runs reducers one at a time: one reserves, the other is refused and logged.</div>` : ""}
+        ${pending ? `<button class="b-btn small ${off}" data-act="agent-approve" ${off}>agent tries to approve #${i.request!.id}</button>
+          <div class="b-muted small">The agent identity calls approve_payment. The reducer checks the sender's role and refuses.</div>` : ""}
+        <div class="b-muted small">A local demo process holding the agent token makes these calls, not your identity.</div>
+      </div>`;
   }
 
   private async onClick(e: Event) {
@@ -248,6 +280,7 @@ export class Board {
     const sel = this.pick(list);
     const { reducers } = this.session.conn;
     this.busy = true; this.render();
+    let notice: Notice | null = null;
     try {
       switch (t.dataset.act) {
         case "seed": await reducers.seedWorld({}); break;
@@ -259,12 +292,26 @@ export class Board {
         }
         case "request": if (sel?.invoiceDocId) await reducers.requestPayment({ loadId: sel.loadId, invoiceDocumentId: sel.invoiceDocId }); break;
         case "bank": if (sel) await reducers.updateCarrierBank({ carrierId: sel.load.carrierId, bankLabel: `Changed Bank ••${String(Date.now()).slice(-4)}`, pending: false }); break;
+        case "race": if (sel?.invoiceDocId) {
+          const r = await demoControl(`race?load=${encodeURIComponent(sel.loadId)}&doc=${encodeURIComponent(sel.invoiceDocId)}`);
+          const o = r.outcomes ?? [];
+          notice = {
+            kind: r.reserved === 1 && o.length === 2 ? "ok" : "refused",
+            title: `database said: request payment ×${o.length} → ${o.map(x => x.outcome).join(", ")}`,
+            text: o.map((x, n) => `${n === 0 ? "First" : "Second"} call ${x.outcome}${x.request_id ? ` request #${x.request_id}` : ""}${x.outcome === "refused" ? `: ${x.reason}` : "."}`).join(" "),
+          };
+        } break;
+        case "agent-approve": if (sel?.request) {
+          const x = (await demoControl(`agent-approve?request=${sel.request.id}`)).outcomes?.[0];
+          notice = x
+            ? { kind: x.outcome === "refused" ? "refused" : "ok", title: `database said: agent approve payment → ${x.outcome}`, text: x.reason }
+            : { kind: "refused", text: "No decision_log row came back from the agent's approve_payment call." };
+        } break;
       }
-      this.notice = null;
     } catch (err) {
-      this.notice = { text: `technical failure (transaction aborted): ${String(err)}`, kind: "refused" };
+      notice = { text: err instanceof DemoControlError ? err.message : `technical failure (transaction aborted): ${String(err)}`, kind: "refused" };
     } finally {
-      this.busy = false; this.render();
+      this.notice = notice; this.busy = false; this.render();
     }
   }
 }

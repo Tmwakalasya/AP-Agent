@@ -19,9 +19,13 @@ import type { Decision } from "../module/rules.ts";
 //   npx tsx agent/worker.ts            process everything pending, exit
 //   npx tsx agent/worker.ts --watch    keep running, react to new documents
 //   npx tsx agent/worker.ts --manual   skip Claude even if a key is present
+//   npx tsx agent/worker.ts --leave-ready=L-2033,L-2029
+//                                      propose these loads but do not request them,
+//                                      so the demo can request them live
 
 const WATCH = process.argv.includes("--watch");
 const FORCE_MANUAL = process.argv.includes("--manual");
+const LEAVE_READY = new Set((process.argv.find(a => a.startsWith("--leave-ready="))?.slice("--leave-ready=".length) ?? "").split(",").filter(Boolean));
 const useClaude = !!ANTHROPIC_API_KEY && !FORCE_MANUAL;
 
 const money = (c: number | bigint) => `$${(Number(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
@@ -113,6 +117,7 @@ async function settle(docId: string) {
   log(`${loadId} ${docId}: policy says ${s.decision}${failed.length ? ` (${failed.join(", ")})` : ""} · settlement #${s.id} written by the database`);
   if (local && local.decision !== s.decision) log(`${loadId}: local preview (${local.decision}) differed from the reducer (${s.decision}); the reducer is authoritative`);
   if (s.decision === "request_approval") {
+    if (LEAVE_READY.has(loadId)) { log(`${loadId}: left ready, not requested (--leave-ready)`); return; }
     await agent.reducers.requestPayment({ loadId, invoiceDocumentId: docId });
     const r = [...db.paymentRequest.iter()].find(x => x.loadId === loadId);
     log(r ? `${loadId}: payment request #${r.id} reserved · ${money(r.amountCents)} to ${r.payeeKind} ${r.payeeId} · needs a different human to approve` : `${loadId}: request refused by the database (see decision_log)`);

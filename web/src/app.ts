@@ -1,7 +1,8 @@
 import { Board } from "./board.ts";
-import { connect, loadFromUrl, myActor, personaFromUrl, personaHref } from "./stdb.ts";
+import { connect, DEMO, loadFromUrl, myActor, personaFromUrl, personaHref } from "./stdb.ts";
 import type { PersonaKey } from "./stdb.ts";
 
+document.body.classList.toggle("demo", DEMO);
 const persona = personaFromUrl();
 const session = connect(persona);
 const boardEl = document.getElementById("board")!;

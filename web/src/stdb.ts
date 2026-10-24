@@ -11,7 +11,9 @@ const params = new URLSearchParams(location.search);
 // instance, maincloud) without rebuilding. Tokens are scoped to that target.
 export const HOST = params.get("host") ?? env.VITE_SPACETIME_HOST ?? "ws://127.0.0.1:3000";
 export const DB = params.get("db") ?? env.VITE_SPACETIME_DB ?? "remit-to";
-const DEFAULT_TARGET = HOST === "ws://127.0.0.1:3000" && DB === "remit-to";
+export const DEFAULT_TARGET = HOST === "ws://127.0.0.1:3000" && DB === "remit-to";
+// ?demo sizes the board for screen recording.
+export const DEMO = params.has("demo");
 
 const TABLES = ["actor", "carrier", "factor", "assignment", "load", "document", "extraction",
   "settlement", "payment_request", "approval", "decision_log"];
@@ -49,6 +51,7 @@ export function personaHref(persona: PersonaKey, load?: string | null): string {
   const url = new URL("/app/", location.origin);
   url.searchParams.set("persona", persona);
   if (load) url.searchParams.set("load", load);
+  if (DEMO) url.searchParams.set("demo", "");
   if (!DEFAULT_TARGET) { url.searchParams.set("host", HOST); url.searchParams.set("db", DB); }
   return url.pathname + url.search;
 }
