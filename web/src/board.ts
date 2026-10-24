@@ -107,7 +107,7 @@ export class Board {
   private payeeName(kind: string, id: string) {
     const db = this.session.conn.db;
     const row = kind === "factor" ? db.factor.id.find(id) : db.carrier.id.find(id);
-    return row ? `${row.name} <small>(${kind})</small>` : `${esc(id)} <small>(${esc(kind)})</small>`;
+    return row ? `${esc(row.name)} <small>(${esc(kind)})</small>` : `${esc(id)} <small>(${esc(kind)})</small>`;
   }
 
   private banner(i: Item): string {
@@ -197,14 +197,21 @@ export class Board {
     if (me.role === "runner" || me.role === "world") return { can: false, text: `The ${me.role} identity cannot approve payments.` };
     if (!i) return { can: false, text: "Select a load." };
     if (!i.request) return { can: false, text: i.status === "hold" ? "No request exists. The reducer refused to create one; the failed check is in the audit log." : i.status === "ready" ? "Policy passed. Nothing to approve until a request exists." : "Nothing to approve." };
+    // Staleness proxy: the payee's current bank version against the one the
+    // request is bound to. The reducer recomputes the full snapshot.
+    const db = this.session.conn.db;
+    const payeeRow = i.request.payeeKind === "factor" ? db.factor.id.find(i.request.payeeId) : db.carrier.id.find(i.request.payeeId);
+    const bankPending = i.request.payeeKind === "carrier" && !!(payeeRow as { bankChangePending?: boolean } | undefined)?.bankChangePending;
     const res = checkApproval({
       actor: { id: me.id, role: me.role as "ap_lead" | "controller", approval_limit_cents: Number(me.approvalLimitCents) },
-      request: { requested_by: i.request.requestedBy, amount_cents: Number(i.request.amountCents), status: i.request.state, snapshot_current: true },
+      request: { requested_by: i.request.requestedBy, amount_cents: Number(i.request.amountCents), status: i.request.state, snapshot_current: !payeeRow || payeeRow.bankVersion === i.request.bankVersion },
     });
+    if (res.allowed && bankPending && i.request.state === "pending") return { can: false, text: `${esc(payeeRow?.name ?? i.request.payeeId)} has an unresolved bank change, so policy holds this invoice (R8). The database refuses any approval until a controller clears it.` };
     if (!res.allowed) {
       if (res.reason.includes("own request")) return { can: false, text: `You requested this (${me.id}). A different person must approve it. If you try, the database refuses and logs it.` };
       if (res.reason.includes("pending")) return { can: false, text: `Already ${i.request.state}. Nothing left to approve.` };
       if (res.reason.includes("limit")) return { can: false, text: `${money(i.request.amountCents)} is over your approval limit (${money(me.approvalLimitCents)}). If you try, the database refuses and logs it.` };
+      if (res.reason.includes("stale")) return { can: false, text: `The bank destination changed since this request was bound (v${i.request.bankVersion} → v${payeeRow?.bankVersion}). If you try, the database re-binds the request and refuses this approval; approve again after.` };
       return { can: false, text: res.reason };
     }
     return { can: true, text: `You can approve or reject this. Your approval binds ${money(i.request.amountCents)} to ${i.request.payeeId} at bank v${i.request.bankVersion}.` };

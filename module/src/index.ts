@@ -10,6 +10,7 @@ export { default } from './schema.ts';
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 type Actor = NonNullable<ReturnType<Ctx['db']['actor']['id']['find']>>;
 type Role = 'agent' | 'ap_lead' | 'controller' | 'runner' | 'world';
+type Request = NonNullable<ReturnType<Ctx['db']['paymentRequest']['id']['find']>>;
 
 // ---------------------------------------------------------------- helpers
 
@@ -134,6 +135,33 @@ function digestOf(decision: Decision, bankVersion: number): string {
   });
 }
 
+// Trusted rows changed under a live request. The reservation holds and any
+// approval is void. The request is re-bound to the current rows so a new
+// approval can be made, but only while policy still pays the same party the
+// same amount; otherwise it stays pending with its old digest, which no
+// approval can match, until a human reviews it.
+function refreshSnapshot(ctx: Ctx, actor: Actor, operation: string, request: Request, why: string) {
+  const base = { ...request, state: 'pending', updatedAt: ctx.timestamp };
+  const projected = projectReview(ctx, request.loadId, request.invoiceDocumentId);
+  if (typeof projected === 'string') {
+    ctx.db.paymentRequest.id.update({ ...base, lastOutcome: `${why}. ${projected}` });
+    log(ctx, { actor, operation, outcome: 'ok', reason: `Request #${request.id} returned to pending. ${projected}`, loadId: request.loadId, requestId: request.id });
+    return;
+  }
+  const decision = evaluateSettlement(projected.input);
+  const payable = decision.decision === 'request_approval' && decision.payee?.kind === request.payeeKind
+    && decision.payee?.id === request.payeeId && BigInt(decision.amount_cents ?? 0) === request.amountCents;
+  if (!payable) {
+    const failed = decision.rule_results.filter(r => !r.passed).map(r => r.rule_id).join(', ');
+    ctx.db.paymentRequest.id.update({ ...base, lastOutcome: `${why}; policy now holds this invoice (${failed || 'payee or amount changed'}). No approval can bind to it until that clears.` });
+    log(ctx, { actor, operation, outcome: 'held', reason: `Request #${request.id} returned to pending; policy now holds it (${failed || 'payee or amount changed'}).`, ruleResults: decision.rule_results, loadId: request.loadId, requestId: request.id });
+    return;
+  }
+  const digest = digestOf(decision, projected.bankVersion);
+  ctx.db.paymentRequest.id.update({ ...base, snapshotDigest: digest, bankVersion: projected.bankVersion, lastOutcome: `${why}; re-bound to bank v${projected.bankVersion}. Needs a new approval.` });
+  log(ctx, { actor, operation, outcome: 'ok', reason: `Request #${request.id} returned to pending and re-bound to bank v${projected.bankVersion}; a new approval is required.`, loadId: request.loadId, requestId: request.id });
+}
+
 // ---------------------------------------------------------------- lifecycle
 
 export const init = spacetimedb.init(ctx => {
@@ -255,6 +283,11 @@ export const updateCarrierBank = spacetimedb.reducer(
     if (!carrier) { log(ctx, { actor, operation: op, outcome: 'refused', reason: `Unknown carrier ${carrierId}.` }); return; }
     ctx.db.carrier.id.update({ ...carrier, bankLabel, bankVersion: carrier.bankVersion + 1, bankChangePending: pending });
     log(ctx, { actor, operation: op, outcome: 'ok', reason: `Carrier ${carrierId} bank destination now v${carrier.bankVersion + 1}${pending ? ' (callback pending)' : ''}.` });
+    // Anything not yet dispatched to this carrier was bound to the old destination.
+    const live = [...ctx.db.paymentRequest.iter()].filter(r => r.payeeKind === 'carrier' && r.payeeId === carrierId && (r.state === 'pending' || r.state === 'approved'));
+    for (const r of live) {
+      refreshSnapshot(ctx, actor, op, r, r.state === 'approved' ? 'Approval invalidated: bank destination changed before dispatch' : 'Bank destination changed before approval');
+    }
   },
 );
 
@@ -367,7 +400,22 @@ function approvalDecision(ctx: Ctx, operation: string, requestId: bigint, snapsh
   if (!actor) return;
   if (!request) { log(ctx, { actor, operation, outcome: 'refused', reason: `Unknown request #${requestId}.`, requestId }); return; }
   const projected = projectReview(ctx, request.loadId, request.invoiceDocumentId);
-  const current = typeof projected === 'string' ? '' : digestOf(evaluateSettlement(projected.input), projected.bankVersion);
+  const now = typeof projected === 'string' ? null : evaluateSettlement(projected.input);
+  const current = now && typeof projected !== 'string' ? digestOf(now, projected.bankVersion) : '';
+  if (decision === 'approved' && request.state === 'pending' && actor.id !== request.requestedBy) {
+    if (now && now.decision !== 'request_approval') {
+      const failed = now.rule_results.filter(r => !r.passed).map(r => r.rule_id).join(', ');
+      log(ctx, { actor, operation, outcome: 'refused', reason: `Policy now holds this invoice (${failed} failed); request #${requestId} cannot be approved.`, ruleResults: now.rule_results, loadId: request.loadId, requestId });
+      return;
+    }
+    if (current !== '' && current !== request.snapshotDigest) {
+      // The stored snapshot is stale against trusted rows. Re-bind, then refuse
+      // this approval so the approver sees and approves the new snapshot.
+      refreshSnapshot(ctx, actor, operation, request, 'Trusted rows changed since this request');
+      log(ctx, { actor, operation, outcome: 'refused', reason: `The approval snapshot is stale: trusted rows changed since request #${requestId} was made. It has been re-bound; approve again against the new snapshot.`, loadId: request.loadId, requestId });
+      return;
+    }
+  }
   const check = checkApproval({
     actor: { id: actor.id, role: actor.role as 'ap_lead' | 'controller', approval_limit_cents: cents(actor.approvalLimitCents) },
     request: {
@@ -417,8 +465,8 @@ export const claimPayment = spacetimedb.reducer(
     const current = typeof projected === 'string' ? '' : digestOf(evaluateSettlement(projected.input), projected.bankVersion);
     if (current !== request.snapshotDigest) {
       // The approval was bound to a snapshot that no longer matches trusted rows.
-      ctx.db.paymentRequest.id.update({ ...request, state: 'pending', lastOutcome: 'approval invalidated: snapshot changed before dispatch', updatedAt: ctx.timestamp });
       log(ctx, { actor, operation: op, outcome: 'refused', reason: `Snapshot changed since approval; request #${requestId} returned to pending.`, loadId: request.loadId, requestId });
+      refreshSnapshot(ctx, actor, op, request, 'Approval invalidated: snapshot changed before dispatch');
       return;
     }
     const payee = request.payeeKind === 'factor' ? ctx.db.factor.id.find(request.payeeId) : ctx.db.carrier.id.find(request.payeeId);

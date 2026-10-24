@@ -169,18 +169,48 @@ test("separation of duties: self-approval and agent approval are refused; the co
   assert.equal(requestFor(approver, "L-2033")!.state, "approved");
 });
 
-test("stale approval: a bank change before claim invalidates the approval and returns it to pending", async () => {
+test("stale approval: a bank change before dispatch voids the approval; the re-bound request can be approved again", async () => {
   const { controller, runner } = conns;
   const req = requestFor(controller, "L-2037")!;
   await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: req.snapshotDigest });
   assert.equal(requestFor(controller, "L-2037")!.state, "approved");
+
+  // The bank change itself sends the request back to pending, bound to the new destination.
   await controller.reducers.updateCarrierBank({ carrierId: "C-204", bankLabel: "Changed Bank ••0001", pending: false });
   await sleep(100);
-  await runner.reducers.claimPayment({ requestId: req.id, idempotencyKey: "key-L-2037-1" });
-  assert.match(lastLog(runner, "claim_payment").reason, /Snapshot changed/);
-  const back = requestFor(runner, "L-2037")!;
+  const back = requestFor(controller, "L-2037")!;
   assert.equal(back.state, "pending");
+  assert.equal(back.bankVersion, req.bankVersion + 1);
+  assert.notEqual(back.snapshotDigest, req.snapshotDigest);
+  assert.match(back.lastOutcome, /invalidated/);
   assert.equal(back.idempotencyKey, "");
+
+  // The old approval cannot dispatch, and the old digest cannot approve.
+  await runner.reducers.claimPayment({ requestId: req.id, idempotencyKey: "key-L-2037-1" });
+  assert.match(lastLog(runner, "claim_payment").reason, /not approved/);
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: req.snapshotDigest });
+  assert.match(lastLog(controller, "approve_payment").reason, /stale/);
+  assert.equal(requestFor(controller, "L-2037")!.state, "pending");
+
+  // The re-bound snapshot takes a new approval; a second change voids it again.
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: back.snapshotDigest });
+  assert.equal(lastLog(controller, "approve_payment").outcome, "ok");
+  assert.equal(requestFor(controller, "L-2037")!.state, "approved");
+  await controller.reducers.updateCarrierBank({ carrierId: "C-204", bankLabel: "Changed Bank ••0002", pending: false });
+  await sleep(100);
+  const again = requestFor(controller, "L-2037")!;
+  assert.equal(again.state, "pending");
+  assert.equal(again.bankVersion, req.bankVersion + 2);
+
+  // A pending bank change is a policy hold (R8): the request stays pending and no digest can approve it.
+  await controller.reducers.updateCarrierBank({ carrierId: "C-204", bankLabel: "Changed Bank ••0003", pending: true });
+  await sleep(100);
+  const held = requestFor(controller, "L-2037")!;
+  assert.equal(held.state, "pending");
+  assert.match(held.lastOutcome, /holds this invoice \(R8\)/);
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: held.snapshotDigest });
+  assert.match(lastLog(controller, "approve_payment").reason, /Policy now holds/);
+  assert.equal(requestFor(controller, "L-2037")!.state, "pending");
 });
 
 test("runner: claim freezes the payload; outcomes are idempotent and transitions are enforced", async () => {
