@@ -5,7 +5,17 @@
   "engines": { "node": ">=22.18.0" },
   "scripts": {
     "test": "node --test module/*.test.ts world/*.test.ts",
+    "test:live": "node --import tsx --test agent/live.test.ts",
     "demo": "node world/demo.ts",
-    "score": "node world/score.ts"
+    "score": "node world/score.ts",
+    "publish:local": "spacetime publish remit-to --server local --yes",
+    "reset": "spacetime publish remit-to --server local --delete-data=always --yes && spacetime generate --lang typescript --out-dir ./bindings --module-path ./module"
+  },
+  "dependencies": {
+    "spacetimedb": "2.13.*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "~5.6.2"
   }
 }
