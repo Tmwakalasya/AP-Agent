@@ -15,8 +15,7 @@ Two minutes, five beats, one take. Each beat lists what to click, what should ap
 
 Do not, during a take:
 
-- Click **race** on L-2029. The button shows on any ready load. Racing L-2029 uses up the AP lead's beat; restart `demo:up`.
-- Click **change … bank destination**. It works, but it is not in the script.
+- Click **change … bank destination**. It works (the request re-binds to the new bank version and asks you to approve again), but it is not in the script.
 - Open a third tab with `?persona=`.
 
 ## 1 · Redirect (0:00–0:25) · controller tab, L-2041
@@ -45,7 +44,7 @@ Say: "This one matches the rate confirmation and the proof of delivery. The agen
 | Click | You should see |
 | --- | --- |
 | **L-2037 re-bill** | **Hold.** "This load already has an obligation (request #1, INV-5521, simulated_settled). This invoice bills it again under a new number." R3 failed. |
-| **L-2033** | **Ready. $925.00 to Cascade Haul Co.** Demo controls box on the right. |
+| **L-2033** | **Ready. $925.00 to Cascade Haul Co.** Demo controls box on the right (the race button only appears on this load). |
 | **race: two agent requests at once** | "database said: request payment ×2 → reserved, refused". The audit column gets a refused row with the reason "already reserved by an existing request". L-2033 goes to **pending approval**. |
 
 Say: "Two weeks later the same carrier bills the same load again under a new number. The load already has an obligation, so it's held. Now the harder case: two workers pick up the same invoice in the same instant. The database runs reducers one at a time, and a unique index on the load is the reservation. One request is reserved; the other is refused, and the refusal is a committed row in the audit log."
@@ -89,7 +88,9 @@ Say: "Worst case: the provider accepted the payment and we crashed before writin
 
 ## If something goes wrong mid-take
 
-- **Board says "Not connected".** SpacetimeDB is down. Restart `demo:up`; it starts `spacetime` if :3000 is free.
+- **Header says "reconnecting in …".** The tab lost SpacetimeDB and will come back on its own, same seat, as soon as :3000 answers. The runner and demo control exit on a drop, so `demo:up` stops too; restart it (`npm run demo:up`) and the tabs recover without a refresh.
+- **Board says "Not connected".** SpacetimeDB was down when the tab loaded. Restart `demo:up`; it starts `spacetime` if :3000 is free. The tab retries by itself.
+- **A check you opened closed by itself.** It should not any more; the open state is kept while the row stays the same. Switching rows resets it, which is expected.
 - **Race or agent-approve says "Demo control is not running".** `demo:up` was started in a way that skipped it, or it crashed. Restart `demo:up`.
 - **Approve does nothing for a few seconds.** The runner is off (`--no-runner`) or crashed. Check the `runner │` lines in the `demo:up` output.
 - **Anything else.** Stop, restart `demo:up`, reopen the two tabs, start the take again. A restart takes about fifteen seconds.
