@@ -192,7 +192,7 @@ export class Board {
   // The reducer is still the authority; this only drives the hint text.
   private actHint(i: Item | undefined): { can: boolean; text: string } {
     const me = myActor(this.session);
-    if (!me) return { can: false, text: this.session.role ? `The ${this.session.role.replace("_", " ")} persona is already bound to another browser or identity. Each persona binds once per database; run npm run reset to free it.` : "Viewer. Read-only." };
+    if (!me) return { can: false, text: this.session.role ? `Another browser already holds the ${this.session.role.replace("_", " ")} seat, so this tab cannot approve. Each seat binds to the first browser that opens it. Close the other tab, then rerun npm run demo:up; open tabs reload and claim their seats.` : "Viewer. Read-only." };
     if (me.role === "agent") return { can: false, text: "The agent identity cannot approve anything." };
     if (me.role === "runner" || me.role === "world") return { can: false, text: `The ${me.role} identity cannot approve payments.` };
     if (!i) return { can: false, text: "Select a load." };
