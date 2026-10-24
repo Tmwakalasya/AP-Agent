@@ -4,6 +4,8 @@ import { Timestamp } from "spacetimedb";
 import { spawn } from "node:child_process";
 import { connect, ensurePersona, sleep } from "./lib/connect.ts";
 import { startMockProvider } from "./mock-provider.ts";
+import { projectReview } from "./lib/project.ts";
+import { evaluateSettlement } from "../module/rules.ts";
 import type { DbConnection } from "../bindings/index.ts";
 
 // Live integration test against a freshly published local database.
@@ -37,13 +39,13 @@ test("personas are bound once, by first claim, and a second claim is refused", a
 
 test("seed_world is controller/world only and idempotent", async () => {
   const { world, agent } = conns;
-  if (count(world.db.load) === 0) await world.reducers.seedWorld();
+  if (count(world.db.load) === 0) await world.reducers.seedWorld({});
   assert.equal(count(world.db.load), 4);
   assert.equal(count(world.db.document), 15);
   assert.equal(count(world.db.assignment), 1);
-  await world.reducers.seedWorld();
+  await world.reducers.seedWorld({});
   assert.match(lastLog(world, "seed_world").reason, /already seeded/);
-  await agent.reducers.seedWorld();
+  await agent.reducers.seedWorld({});
   assert.match(lastLog(agent, "seed_world").reason, /Role agent may not/);
 });
 
@@ -58,36 +60,65 @@ test("document hashes attach once and are then immutable", async () => {
   assert.equal(world.db.document.id.find("D-inv-5521")!.contentHash, hashFor("D-inv-5521"));
 });
 
-async function extract(c: DbConnection, documentId: string, invoiceNumber: string, cents: bigint, remitToKind: string, remitToId: string, invoiceAt: string) {
+async function extract(c: DbConnection, documentId: string, invoiceNumber: string, cents: bigint, remitToKind: string, remitToId: string, invoiceAt: string, loadReference: string) {
   await c.reducers.recordExtraction({
-    documentId, contentHash: hashFor(documentId), invoiceNumber, invoiceAt: ts(invoiceAt), currency: "USD",
+    documentId, contentHash: hashFor(documentId), invoiceNumber, loadReference, invoiceAt: ts(invoiceAt), currency: "USD",
     linehaulCents: cents, accessorialsCents: 0n, totalCents: cents, remitToKind, remitToId, confidence: 0.98,
     model: "test", promptVersion: "test", method: "manual", explanation: "test fixture",
   });
 }
 
+type ExtractionArgs = Parameters<DbConnection["reducers"]["recordExtraction"]>[0];
+function extractionArgs(c: DbConnection, documentId: string): ExtractionArgs {
+  const x = [...c.db.extraction.iter()].find(e => e.documentId === documentId)!;
+  return {
+    documentId, contentHash: x.contentHash, invoiceNumber: x.invoiceNumber, loadReference: x.loadReference,
+    invoiceAt: x.invoiceAt, currency: x.currency, linehaulCents: x.linehaulCents,
+    accessorialsCents: x.accessorialsCents, totalCents: x.totalCents,
+    remitToKind: x.remitToKind, remitToId: x.remitToId, confidence: x.confidence,
+    model: x.model, promptVersion: x.promptVersion, method: x.method, explanation: x.explanation,
+  };
+}
+
 test("only the agent records extractions, and only against the received hash", async () => {
   const { agent, ap_lead } = conns;
   await ap_lead.reducers.recordExtraction({
-    documentId: "D-inv-5521", contentHash: hashFor("D-inv-5521"), invoiceNumber: "X", invoiceAt: ts("2026-06-10T13:00:00Z"), currency: "USD",
+    documentId: "D-inv-5521", contentHash: hashFor("D-inv-5521"), invoiceNumber: "X", loadReference: "L-2037", invoiceAt: ts("2026-06-10T13:00:00Z"), currency: "USD",
     linehaulCents: 1n, accessorialsCents: 0n, totalCents: 1n, remitToKind: "carrier", remitToId: "C-204", confidence: 1,
     model: "t", promptVersion: "t", method: "manual", explanation: "",
   });
   assert.match(lastLog(ap_lead, "record_extraction").reason, /Role ap_lead may not/);
   await agent.reducers.recordExtraction({
-    documentId: "D-inv-5521", contentHash: "wrong", invoiceNumber: "X", invoiceAt: ts("2026-06-10T13:00:00Z"), currency: "USD",
+    documentId: "D-inv-5521", contentHash: "wrong", invoiceNumber: "X", loadReference: "L-2037", invoiceAt: ts("2026-06-10T13:00:00Z"), currency: "USD",
     linehaulCents: 1n, accessorialsCents: 0n, totalCents: 1n, remitToKind: "carrier", remitToId: "C-204", confidence: 1,
     model: "t", promptVersion: "t", method: "manual", explanation: "",
   });
   assert.match(lastLog(agent, "record_extraction").reason, /hash does not match/);
   assert.equal(count(agent.db.extraction), 0);
 
-  await extract(agent, "D-inv-0612", "INV-88213", 240_000n, "carrier", "C-301", "2026-06-12T09:00:00Z");
-  await extract(agent, "D-inv-5521", "INV-5521", 185_000n, "carrier", "C-204", "2026-06-10T13:30:00Z");
-  await extract(agent, "D-inv-5521R", "INV-5521-R", 185_000n, "carrier", "C-204", "2026-06-24T08:00:00Z");
-  await extract(agent, "D-inv-7710", "INV-7710", 92_500n, "carrier", "C-118", "2026-06-09T11:00:00Z");
-  await extract(agent, "D-inv-3302", "INV-3302", 310_000n, "carrier", "C-452", "2026-06-12T15:00:00Z");
+  await extract(agent, "D-inv-0612", "INV-88213", 240_000n, "carrier", "C-301", "2026-06-12T09:00:00Z", "L-2041");
+  await extract(agent, "D-inv-5521", "INV-5521", 185_000n, "carrier", "C-204", "2026-06-10T13:30:00Z", "L-2037");
+  await extract(agent, "D-inv-5521R", "INV-5521-R", 185_000n, "carrier", "C-204", "2026-06-24T08:00:00Z", "L-2037");
+  await extract(agent, "D-inv-7710", "INV-7710", 92_500n, "carrier", "C-118", "2026-06-09T11:00:00Z", "L-2033");
+  await extract(agent, "D-inv-3302", "INV-3302", 310_000n, "carrier", "C-452", "2026-06-12T15:00:00Z", "L-2029");
   assert.equal(count(agent.db.extraction), 5);
+});
+
+test("invoice matching: wrong or missing extracted load references hold despite the seeded document association", async () => {
+  const { agent } = conns;
+  const original = extractionArgs(agent, "D-inv-5521");
+  for (const loadReference of ["L-2029", ""]) {
+    await agent.reducers.recordExtraction({ ...original, loadReference });
+    const preview = projectReview(agent, "L-2037", original.documentId)!;
+    assert.equal(preview.invoice.load_id, loadReference);
+    assert.equal(evaluateSettlement(preview).decision, "hold");
+    await agent.reducers.proposeSettlement({ loadId: "L-2037", invoiceDocumentId: original.documentId, explanation: "", escalationEmail: "" });
+    assert.ok(lastLog(agent, "propose_settlement").ruleResults.some(r => r.ruleId === "R7" && !r.passed));
+    await agent.reducers.requestPayment({ loadId: "L-2037", invoiceDocumentId: original.documentId });
+    assert.equal(lastLog(agent, "request_payment").outcome, "refused");
+    assert.equal(requestFor(agent, "L-2037"), undefined);
+  }
+  await agent.reducers.recordExtraction(original);
 });
 
 test("redirect: the June invoice is held against the March NOA and no request is created", async () => {
@@ -169,6 +200,53 @@ test("separation of duties: self-approval and agent approval are refused; the co
   assert.equal(requestFor(approver, "L-2033")!.state, "approved");
 });
 
+test("extraction corrections invalidate approval even when the agreed amount and policy verdict stay unchanged", async () => {
+  const { agent, controller, runner } = conns;
+  const original = extractionArgs(agent, "D-inv-5521");
+  const req = requestFor(controller, "L-2037")!;
+
+  // A correction before approval changes the snapshot seen by the approver.
+  await agent.reducers.recordExtraction({ ...original, linehaulCents: 185_050n, totalCents: 185_050n });
+  let current = requestFor(agent, "L-2037")!;
+  assert.equal(current.amountCents, req.amountCents);
+  assert.notEqual(current.snapshotDigest, req.snapshotDigest);
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: req.snapshotDigest });
+  assert.equal(lastLog(controller, "approve_payment").outcome, "refused");
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: current.snapshotDigest });
+  assert.equal(requestFor(controller, "L-2037")!.state, "approved");
+
+  // Display-only prose may change without invalidating unchanged facts.
+  await agent.reducers.recordExtraction({ ...extractionArgs(agent, original.documentId), explanation: "Reworded note" });
+  assert.equal(requestFor(agent, "L-2037")!.state, "approved");
+
+  // A correction after approval must prevent dispatch and require another approval.
+  const approvedDigest = current.snapshotDigest;
+  await agent.reducers.recordExtraction(original);
+  current = requestFor(agent, "L-2037")!;
+  assert.equal(current.state, "pending");
+  assert.notEqual(current.snapshotDigest, approvedDigest);
+  await runner.reducers.claimPayment({ requestId: req.id, idempotencyKey: "stale-extraction" });
+  assert.equal(lastLog(runner, "claim_payment").outcome, "refused");
+  assert.equal(requestFor(runner, "L-2037")!.idempotencyKey, "");
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: approvedDigest });
+  assert.equal(lastLog(controller, "approve_payment").outcome, "refused");
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: current.snapshotDigest });
+  assert.equal(requestFor(controller, "L-2037")!.state, "approved");
+
+  // Changing the invoice identity must not silently move its unique reservation.
+  await agent.reducers.recordExtraction({ ...original, invoiceNumber: "CORRECTED-INVOICE-999" });
+  current = requestFor(agent, "L-2037")!;
+  assert.equal(current.state, "pending");
+  assert.equal(current.invoiceKey, req.invoiceKey);
+  assert.match(current.lastOutcome, /invoice identity changed.*Original reservation retained/);
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: current.snapshotDigest });
+  assert.equal(lastLog(controller, "approve_payment").outcome, "refused");
+  await runner.reducers.claimPayment({ requestId: req.id, idempotencyKey: "changed-invoice" });
+  assert.equal(lastLog(runner, "claim_payment").outcome, "refused");
+  assert.equal(requestFor(runner, "L-2037")!.frozenPayload, "");
+  await agent.reducers.recordExtraction(original);
+});
+
 test("stale approval: a bank change before dispatch voids the approval; the re-bound request can be approved again", async () => {
   const { controller, runner } = conns;
   const req = requestFor(controller, "L-2037")!;
@@ -241,6 +319,36 @@ test("runner: claim freezes the payload; outcomes are idempotent and transitions
   await runner.reducers.recordPaymentOutcome({ requestId: req.id, idempotencyKey: "key-L-2029-1", outcome: "simulated_settled", transferId: "tr_1", detail: "mock settled" });
   assert.equal(requestFor(runner, "L-2029")!.state, "simulated_settled");
   assert.equal(requestFor(runner, "L-2029")!.transferId, "tr_1");
+});
+
+test("provider transfer ids cannot be reused for another obligation; refusal preserves its state", async () => {
+  const { agent, controller, runner } = conns;
+  const paid = requestFor(runner, "L-2029")!;
+  assert.equal(paid.state, "simulated_settled");
+  await controller.reducers.updateCarrierBank({ carrierId: "C-204", bankLabel: "Verified bank", pending: false });
+  const req = requestFor(controller, "L-2037")!;
+  await controller.reducers.approvePayment({ requestId: req.id, snapshotDigest: req.snapshotDigest });
+  await runner.reducers.claimPayment({ requestId: req.id, idempotencyKey: "transfer-reuse-test" });
+  const before = requestFor(runner, "L-2037")!;
+  assert.equal(before.state, "submitting");
+  await runner.reducers.recordPaymentOutcome({ requestId: req.id, idempotencyKey: before.idempotencyKey, outcome: "submitted", transferId: paid.transferId, detail: "wrong obligation" });
+  assert.equal(lastLog(runner, "record_payment_outcome").outcome, "refused");
+  assert.match(lastLog(runner, "record_payment_outcome").reason, /already belongs to request/);
+  assert.deepEqual(requestFor(runner, "L-2037"), before);
+  assert.equal([...runner.db.paymentRequest.iter()].filter(r => r.transferId === paid.transferId).length, 1);
+
+  // Independent transfer succeeds, and repeating its notification is still safe.
+  const outcome = { requestId: req.id, idempotencyKey: before.idempotencyKey, outcome: "submitted", transferId: "tr_independent", detail: "mock accepted" };
+  await runner.reducers.recordPaymentOutcome(outcome);
+  await runner.reducers.recordPaymentOutcome(outcome);
+  assert.match(lastLog(runner, "record_payment_outcome").reason, /Duplicate submitted/);
+  await runner.reducers.recordPaymentOutcome({ ...outcome, outcome: "simulated_settled" });
+  assert.equal(requestFor(runner, "L-2037")!.state, "simulated_settled");
+
+  // Post-dispatch corrections cannot reset the frozen payment or permit another claim.
+  await agent.reducers.recordExtraction({ ...extractionArgs(agent, req.invoiceDocumentId), invoiceNumber: "LATE-CORRECTION" });
+  assert.equal(requestFor(agent, "L-2037")!.state, "simulated_settled");
+  assert.equal(requestFor(agent, "L-2037")!.frozenPayload, before.frozenPayload);
 });
 
 test("crash after accept: a restarted runner reconciles by the stored key; one transfer, one submitted event", async () => {

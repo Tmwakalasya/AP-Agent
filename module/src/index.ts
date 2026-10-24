@@ -111,7 +111,7 @@ function projectReview(ctx: Ctx, loadId: string, invoiceDocumentId: string): { i
     },
     carrier: { id: carrier.id, authority: carrier.authority as 'active' | 'revoked' },
     invoice: {
-      document_id: invoiceDoc.id, carrier_id: invoiceDoc.carrierId, load_id: invoiceDoc.loadId ?? '',
+      document_id: invoiceDoc.id, carrier_id: invoiceDoc.carrierId, load_id: extraction.loadReference,
       invoice_number: extraction.invoiceNumber, invoice_at: iso(extraction.invoiceAt), currency: extraction.currency,
       linehaul_cents: cents(extraction.linehaulCents), accessorials_cents: cents(extraction.accessorialsCents),
       total_cents: cents(extraction.totalCents), remit_to: remitTo, confidence: extraction.confidence,
@@ -128,18 +128,19 @@ function bankVersionFor(ctx: Ctx, payee: Payee | null, carrierVersion: number): 
   return carrierVersion;
 }
 
-function digestOf(decision: Decision, bankVersion: number): string {
+function digestOf(decision: Decision, bankVersion: number, invoice: ReviewInput['invoice']): string {
   return snapshotDigest({
     amount_cents: decision.amount_cents, currency: 'USD', payee: decision.payee, bank_version: bankVersion,
     evidence_ids: decision.evidence_ids, failed_rules: decision.rule_results.filter(r => !r.passed).map(r => r.rule_id),
+    invoice,
   });
 }
 
 // Trusted rows changed under a live request. The reservation holds and any
 // approval is void. The request is re-bound to the current rows so a new
 // approval can be made, but only while policy still pays the same party the
-// same amount; otherwise it stays pending with its old digest, which no
-// approval can match, until a human reviews it.
+// same amount and reserves the same invoice; otherwise it stays pending with
+// its old digest, which no approval can match, until a human reviews it.
 function refreshSnapshot(ctx: Ctx, actor: Actor, operation: string, request: Request, why: string) {
   const base = { ...request, state: 'pending', updatedAt: ctx.timestamp };
   const projected = projectReview(ctx, request.loadId, request.invoiceDocumentId);
@@ -149,6 +150,13 @@ function refreshSnapshot(ctx: Ctx, actor: Actor, operation: string, request: Req
     return;
   }
   const decision = evaluateSettlement(projected.input);
+  const invoiceKey = `${projected.input.carrier.id}|${normalizeInvoiceNumber(projected.input.invoice.invoice_number)}`;
+  if (invoiceKey !== request.invoiceKey) {
+    const reason = `${why}; invoice identity changed from ${request.invoiceKey} to ${invoiceKey}. Original reservation retained; reconcile the invoice before approval.`;
+    ctx.db.paymentRequest.id.update({ ...base, lastOutcome: reason });
+    log(ctx, { actor, operation, outcome: 'held', reason, loadId: request.loadId, requestId: request.id });
+    return;
+  }
   const payable = decision.decision === 'request_approval' && decision.payee?.kind === request.payeeKind
     && decision.payee?.id === request.payeeId && BigInt(decision.amount_cents ?? 0) === request.amountCents;
   if (!payable) {
@@ -157,7 +165,7 @@ function refreshSnapshot(ctx: Ctx, actor: Actor, operation: string, request: Req
     log(ctx, { actor, operation, outcome: 'held', reason: `Request #${request.id} returned to pending; policy now holds it (${failed || 'payee or amount changed'}).`, ruleResults: decision.rule_results, loadId: request.loadId, requestId: request.id });
     return;
   }
-  const digest = digestOf(decision, projected.bankVersion);
+  const digest = digestOf(decision, projected.bankVersion, projected.input.invoice);
   ctx.db.paymentRequest.id.update({ ...base, snapshotDigest: digest, bankVersion: projected.bankVersion, lastOutcome: `${why}; re-bound to bank v${projected.bankVersion}. Needs a new approval.` });
   log(ctx, { actor, operation, outcome: 'ok', reason: `Request #${request.id} returned to pending and re-bound to bank v${projected.bankVersion}; a new approval is required.`, loadId: request.loadId, requestId: request.id });
 }
@@ -295,7 +303,7 @@ export const updateCarrierBank = spacetimedb.reducer(
 
 export const recordExtraction = spacetimedb.reducer(
   {
-    documentId: t.string(), contentHash: t.string(), invoiceNumber: t.string(), invoiceAt: t.timestamp(),
+    documentId: t.string(), contentHash: t.string(), invoiceNumber: t.string(), loadReference: t.string(), invoiceAt: t.timestamp(),
     currency: t.string(), linehaulCents: t.u64(), accessorialsCents: t.u64(), totalCents: t.u64(),
     remitToKind: t.string(), remitToId: t.string(), confidence: t.f64(),
     model: t.string(), promptVersion: t.string(), method: t.string(), explanation: t.string(),
@@ -312,7 +320,7 @@ export const recordExtraction = spacetimedb.reducer(
       return;
     }
     const row = {
-      id: 0n, documentId: a.documentId, contentHash: a.contentHash, invoiceNumber: a.invoiceNumber, invoiceAt: a.invoiceAt,
+      id: 0n, documentId: a.documentId, contentHash: a.contentHash, invoiceNumber: a.invoiceNumber, loadReference: a.loadReference, invoiceAt: a.invoiceAt,
       currency: a.currency, linehaulCents: a.linehaulCents, accessorialsCents: a.accessorialsCents, totalCents: a.totalCents,
       remitToKind: a.remitToKind, remitToId: a.remitToId, confidence: a.confidence, model: a.model, promptVersion: a.promptVersion,
       method: a.method, explanation: a.explanation, recordedBy: ctx.sender, recordedAt: ctx.timestamp,
@@ -321,6 +329,14 @@ export const recordExtraction = spacetimedb.reducer(
     if (existing) ctx.db.extraction.id.update({ ...row, id: existing.id });
     else ctx.db.extraction.insert(row);
     log(ctx, { actor, operation: op, outcome: 'ok', reason: `Recorded ${a.method} extraction of ${a.documentId} (${a.invoiceNumber}, confidence ${a.confidence}).`, loadId: doc.loadId ?? '', evidenceIds: [a.documentId] });
+    const request = ctx.db.paymentRequest.loadId.find(doc.loadId ?? '');
+    if (request && request.invoiceDocumentId === doc.id && (request.state === 'pending' || request.state === 'approved')) {
+      const projected = projectReview(ctx, request.loadId, doc.id);
+      const current = typeof projected === 'string' ? '' : digestOf(evaluateSettlement(projected.input), projected.bankVersion, projected.input.invoice);
+      if (current !== request.snapshotDigest) {
+        refreshSnapshot(ctx, actor, op, request, 'Approval invalidated: extracted invoice facts changed');
+      }
+    }
   },
 );
 
@@ -333,7 +349,7 @@ export const proposeSettlement = spacetimedb.reducer(
     const projected = projectReview(ctx, loadId, invoiceDocumentId);
     if (typeof projected === 'string') { log(ctx, { actor, operation: op, outcome: 'refused', reason: projected, loadId }); return; }
     const decision = evaluateSettlement(projected.input);
-    const digest = digestOf(decision, projected.bankVersion);
+    const digest = digestOf(decision, projected.bankVersion, projected.input.invoice);
     ctx.db.settlement.insert({
       id: 0n, loadId, invoiceDocumentId, invoiceNumber: normalizeInvoiceNumber(projected.input.invoice.invoice_number),
       agreedCents: BigInt(decision.amount_cents ?? 0), payeeKind: decision.payee?.kind ?? '', payeeId: decision.payee?.id ?? '',
@@ -380,7 +396,7 @@ export const requestPayment = spacetimedb.reducer(
     const request = ctx.db.paymentRequest.insert({
       id: 0n, loadId, invoiceKey, invoiceDocumentId, settlementId: latest?.id ?? 0n,
       amountCents: BigInt(decision.amount_cents), currency: 'USD', payeeKind: decision.payee.kind, payeeId: decision.payee.id,
-      bankVersion: projected.bankVersion, snapshotDigest: digestOf(decision, projected.bankVersion), requestedBy: actor.id,
+      bankVersion: projected.bankVersion, snapshotDigest: digestOf(decision, projected.bankVersion, projected.input.invoice), requestedBy: actor.id,
       state: 'pending', idempotencyKey: '', frozenPayload: '', transferId: '', lastOutcome: '',
       createdAt: ctx.timestamp, updatedAt: ctx.timestamp,
     });
@@ -401,7 +417,7 @@ function approvalDecision(ctx: Ctx, operation: string, requestId: bigint, snapsh
   if (!request) { log(ctx, { actor, operation, outcome: 'refused', reason: `Unknown request #${requestId}.`, requestId }); return; }
   const projected = projectReview(ctx, request.loadId, request.invoiceDocumentId);
   const now = typeof projected === 'string' ? null : evaluateSettlement(projected.input);
-  const current = now && typeof projected !== 'string' ? digestOf(now, projected.bankVersion) : '';
+  const current = now && typeof projected !== 'string' ? digestOf(now, projected.bankVersion, projected.input.invoice) : '';
   if (decision === 'approved' && request.state === 'pending' && actor.id !== request.requestedBy) {
     if (now && now.decision !== 'request_approval') {
       const failed = now.rule_results.filter(r => !r.passed).map(r => r.rule_id).join(', ');
@@ -462,7 +478,7 @@ export const claimPayment = spacetimedb.reducer(
     if (request.state !== 'approved') { log(ctx, { actor, operation: op, outcome: 'refused', reason: `Request #${requestId} is ${request.state}, not approved.`, loadId: request.loadId, requestId }); return; }
     if (idempotencyKey.trim() === '') { log(ctx, { actor, operation: op, outcome: 'refused', reason: 'An idempotency key is required before dispatch.', loadId: request.loadId, requestId }); return; }
     const projected = projectReview(ctx, request.loadId, request.invoiceDocumentId);
-    const current = typeof projected === 'string' ? '' : digestOf(evaluateSettlement(projected.input), projected.bankVersion);
+    const current = typeof projected === 'string' ? '' : digestOf(evaluateSettlement(projected.input), projected.bankVersion, projected.input.invoice);
     if (current !== request.snapshotDigest) {
       // The approval was bound to a snapshot that no longer matches trusted rows.
       log(ctx, { actor, operation: op, outcome: 'refused', reason: `Snapshot changed since approval; request #${requestId} returned to pending.`, loadId: request.loadId, requestId });
@@ -495,6 +511,15 @@ export const recordPaymentOutcome = spacetimedb.reducer(
     const request = ctx.db.paymentRequest.id.find(requestId);
     if (!request) { log(ctx, { actor, operation: op, outcome: 'refused', reason: `Unknown request #${requestId}.`, requestId }); return; }
     if (request.idempotencyKey !== idempotencyKey) { log(ctx, { actor, operation: op, outcome: 'refused', reason: `Idempotency key does not match request #${requestId}.`, loadId: request.loadId, requestId }); return; }
+    // Reducers serialize this ownership check with the update below. Empty
+    // transfer ids mean no provider transfer has been recorded yet.
+    if (transferId !== '') {
+      const owner = [...ctx.db.paymentRequest.iter()].find(r => r.id !== requestId && r.transferId === transferId);
+      if (owner) {
+        log(ctx, { actor, operation: op, outcome: 'refused', reason: `Transfer ${transferId} already belongs to request #${owner.id}.`, loadId: request.loadId, requestId });
+        return;
+      }
+    }
     if (request.transferId !== '' && transferId !== '' && request.transferId !== transferId) {
       log(ctx, { actor, operation: op, outcome: 'refused', reason: `Transfer ${transferId} does not match recorded transfer ${request.transferId} for request #${requestId}.`, loadId: request.loadId, requestId });
       return;

@@ -77,6 +77,7 @@ const extraction = table({ name: 'extraction', public: true }, {
   documentId: t.string().unique(),
   contentHash: t.string(),
   invoiceNumber: t.string(),
+  loadReference: t.string(),
   invoiceAt: t.timestamp(),
   currency: t.string(),
   linehaulCents: t.u64(),

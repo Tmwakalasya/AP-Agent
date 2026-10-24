@@ -71,7 +71,7 @@ Request numbers assume this order: #1 L-2037 (agent, at seed), #2 L-2033 (race),
 | Open `http://localhost:5173/#evidence` | Scorer numbers and the real / simulated / not built lists. |
 | Optional: cut to the crash clip (below) | Runner killed after accept; restart finds one transfer. |
 
-Say: "On thirty-six synthetic fixtures with an answer key the agent never sees: thirty-six exact, zero false holds, zero unsafe requests. Twenty-two offline tests and twelve live ones against a fresh database, including the race, self-approval and a crash after the provider accepts. Claude reads and explains. The policy decides. The database enforces who may approve."
+Say: "On thirty-six synthetic fixtures with an answer key the agent never sees: thirty-six exact, zero false holds, zero unsafe requests. Twenty-two offline tests and fifteen live ones against a fresh database, including the race, self-approval and a crash after the provider accepts. Claude reads and explains. The policy decides. The database enforces who may approve."
 
 ## Crash clip (record separately, about 10 seconds)
 

@@ -15,6 +15,7 @@ export default __t.row({
   documentId: __t.string().name("document_id"),
   contentHash: __t.string().name("content_hash"),
   invoiceNumber: __t.string().name("invoice_number"),
+  loadReference: __t.string().name("load_reference"),
   invoiceAt: __t.timestamp().name("invoice_at"),
   currency: __t.string(),
   linehaulCents: __t.u64().name("linehaul_cents"),

@@ -2,140 +2,140 @@
 
 **Pay the right party. Prove it.**
 
-An autonomous accounts-payable agent with hard separation of duties. Claude reads the documents and explains; deterministic policy decides; the database enforces who can approve. Proven on freight, where payment-redirect fraud is worst.
+Remit-To is an accounts-payable agent for freight brokers. It reads carrier invoices, checks them against delivery evidence and verified payment instructions, and prepares payments for approval by a different person.
 
-Built solo at Cal Hacks 13.0 (October 2026). Tracks: Hyphenate (Autonomous Systems for Finance), SpacetimeDB, Overall / Most Technically Advanced. No funds move.
+Claude extracts and explains. Deterministic policy decides. SpacetimeDB enforces permissions, reservations, and payment state.
 
-## The three stories
+Built for **Cal Hacks 13.0** with TypeScript, Claude, SpacetimeDB, Node.js, and Vite. **All data is synthetic. The payment provider is a labeled mock; no funds move.**
 
-| Story | What happens | Result |
-| --- | --- | --- |
-| **Redirect** | A June invoice and an "updated banking" email ask us to pay the carrier directly. A verified March notice of assignment routes payment to a factor. | **HOLD**, rule R2. Factor stays the policy payee. NOA shown. Escalation email drafted by Claude. |
-| **Duplicate** | A second invoice for an already-requested load arrives under a new number. Two requests race. | **HOLD**, rule R3. One reservation; the loser's refusal is a committed audit row. |
-| **Clean** | Invoice matches rate con and POD. | Agent requests; a different human approves; runner submits with a persisted idempotency key. `submitted`, then `simulated_settled`. |
+## What it demonstrates
 
-Each story is a load on the live board: [L-2041](http://localhost:5173/app/?persona=controller&load=L-2041), [the L-2037 re-bill](http://localhost:5173/app/?persona=controller&load=L-2037:D-inv-5521R), [L-2037](http://localhost:5173/app/?persona=controller&load=L-2037).
+| Scenario | Decision |
+| --- | --- |
+| **Payment redirect** | A carrier requests direct payment despite a verified assignment to a factoring company. The agent holds the invoice, cites the assignment, and drafts an escalation email. |
+| **Duplicate invoice** | A second invoice bills an already-reserved load under a new number. It is held. Concurrent requests also produce one reservation and one recorded refusal. |
+| **Clean settlement** | An invoice matches the agreed rate and delivery evidence. A different authorized person approves it, then a separate runner submits it to the mock provider. |
 
-## How the pieces split
+The board shows the evidence, policy checks, approval identity, and audit trail for each decision. A read-only version updates live on the landing page.
+
+## Architecture
 
 ```text
-documents ──▶ agent/worker.ts ──▶ record_extraction ─┐
-              (Claude reads,                          │  module/src: reducers re-run
-               rules.ts explains)                     ├─ rules.ts on trusted rows,
-                                                      │  reserve, log every refusal
-browser ──▶ /app  ap_lead | controller ──▶ approve ───┤
-                                                      │
-agent/runner.ts ──▶ claim ──▶ mock provider ──▶ outcome
+Invoice PDFs → Claude extraction → Shared policy → SpacetimeDB reducers
+                                                       │
+                                   ┌───────────────────┼───────────────────┐
+                                   ▼                   ▼                   ▼
+                             Live board          Human approval      Decision log
+                                                       │
+                                                       ▼
+                                                 Payment runner
+                                                       │
+                                                       ▼
+                                                 Mock provider
 ```
 
-`module/rules.ts` is one file, imported unchanged by the agent (to explain) and by the module (to decide). The module derives every actor from `ctx.sender`; a client never names its own role. A business refusal writes a `decision_log` row and returns, so the refusal is a committed event, not an exception.
+The agent and database import the same [policy module](module/rules.ts). Reducers recompute decisions from stored records and derive each caller's role from the connection identity.
 
-## Layout
-
-| Folder | Content |
-| --- | --- |
-| `module/` | SpacetimeDB TypeScript module (`src/`), the policy core `rules.ts`, its tests. |
-| `agent/` | Agent worker (Claude extraction, explanation, reducer calls), payment runner, mock payment provider, one-command demo runner and demo control, live integration test. |
-| `bindings/` | Generated TypeScript client bindings (`spacetime generate`). Committed so the web app and agent build without the CLI. |
-| `web/` | Vite app: landing at `/`, live board at `/app/`. `web/mockup/` is the original static design. |
-| `world/` | Synthetic fixtures, answer key, document renderer, offline demo and scorer. |
-| `docs/` | Build plan, schedule, demo script, judge answers. |
-
-## Run the offline groundwork
-
-Node 22.18+ (native TypeScript). No install, keys or network:
-
-```sh
-npm test        # 22 policy and scoring tests
-npm run demo    # three stories through the policy core
-npm run score   # 36/36 against the explicit answer key
-```
-
-## Run the live system
-
-Requires the `spacetime` CLI (2.13+).
-
-```sh
-npm install && (cd module && npm install)
-cp .env.example .env            # optional: add ANTHROPIC_API_KEY so Claude reads the invoices
-```
-
-### One command
-
-```sh
-npm run demo:up                  # fresh database, seed, agent pass, then provider, runner, demo control, web
-npm run demo:up -- --no-reset    # keep the current database; only start the services
-```
-
-It starts `spacetime` if nothing is listening on :3000, refuses to start if :4310, :4311 or :5173 is taken, prefixes every process's log lines, and stops everything on ctrl-c. The agent leaves L-2033 and L-2029 ready instead of requesting them, so the race and the AP lead's own request happen live. Open the two tabs it prints:
+- **Separate duties:** the agent cannot approve payments, and a requester cannot approve their own request.
+- **Reserve obligations:** unique load and carrier/invoice keys prevent duplicate requests.
+- **Validate evidence:** the extracted load reference must match the load. Approval binds the typed invoice facts, amount, payee, and bank version.
+- **Invalidate stale approvals:** relevant corrections require another approval. Changing the invoice identity retains the original reservation and holds the request for reconciliation.
+- **Recover safely:** the runner persists its idempotency key and exact payload before dispatch. After a crash, it reconciles with the provider using that key.
+- **Keep an audit trail:** business refusals commit an event without creating a payment. Each provider transfer belongs to one request.
 
 ```text
-/app/?persona=controller&demo&load=L-2041
-/app/?persona=ap&demo&load=L-2029
+pending → approved → submitting → submitted → simulated_settled
 ```
 
-`?demo` enlarges the board for recording, widens the audit column with the reason for each refusal, and hides the persona links. On the controller tab, **demo controls** appear for a ready or pending load: *race* sends two `request_payment` calls for the load at the same instant on two agent connections (one reserves, one is refused), and *agent tries to approve* calls `approve_payment` as the agent (refused by role). They go through `agent/demo-control.ts` on :4311, a local process holding the agent token, so the browser never holds it and every outcome is a `decision_log` row.
+An ambiguous provider response is `unknown`; the obligation stays reserved. Provider acceptance is `submitted`, not settlement.
 
-### By hand
+## Quick start
 
-Seven steps, or one terminal with the long-running ones backgrounded.
+### Requirements
+
+- Node.js **22.18+**
+- SpacetimeDB CLI **2.13+**
+- Google Chrome for rendering the demo documents; set `CHROME` if its executable is not at the default macOS path
+- An Anthropic API key for Claude extraction and explanations, or the labeled manual fallback
+
+Install dependencies and configure the optional API key:
 
 ```sh
-
-spacetime start                  # 1. local server on :3000
-npm run reset                    # 2. publish the module fresh, regenerate bindings
-npm run render                   # 3. render the invoices, rate cons, PODs, NOA and email to PDF/PNG
-npm run seed                     # 4. seed the world, then the agent reads every invoice and proposes
-npm run provider                 # 5. mock payment provider on :4310 (labeled; no funds)
-npm run runner                   # 6. payment runner, watches for approved requests
-npm run dev                      # 7. http://localhost:5173
+npm ci
+npm ci --prefix module
+cp .env.example .env
 ```
 
-Then open two tabs: `/app/?persona=ap` and `/app/?persona=controller`. `npm run seed` lets the agent request every clean load itself; the controller approves one, and the runner takes it to `submitted` and then `simulated_settled` while both tabs watch. To have the AP lead request a load instead, seed with `npx tsx agent/seed.ts && npx tsx agent/worker.ts --leave-ready=L-2029`. Try approving your own request: the database refuses and the refusal appears in the audit column.
+Set `ANTHROPIC_API_KEY` in `.env` to enable Claude. Without a key, extraction uses manual fixture data and explanations use templates; both are labeled in the board. Claude results are cached locally by content and prompt/model version.
 
-Without an API key the agent runs on a labeled manual fallback (`method=manual` on every extraction). With a key, each document is read once and cached in `agent/.cache/` by content hash, so reseeding costs nothing.
-
-### Resetting between demos
+Start the demo:
 
 ```sh
-# stop the runner and provider first (ctrl-c), then:
-npm run reset && npm run seed
-# restart: npm run provider, npm run runner
+npm run demo:up
 ```
 
-`reset` wipes the database and the mock provider's transfer log. Personas bind by first claim, so every node process and browser tab rebinds on its next connection; the browser keeps one token per persona in `localStorage`, and the agent, runner and world processes keep theirs in `agent/.tokens/`.
+This command starts the local database if needed, publishes a fresh module, renders and seeds the documents, runs the agent, and starts the web app, mock provider, payment runner, and demo controls.
 
-### Proving recovery
+**The default command resets the demo database and mock transfer log.** Stop an existing demo before running it again. To resume an existing compatible database without reseeding:
 
 ```sh
-npm run test:live    # 12 live integration tests on a fresh database (run npm run reset first)
-npm run demo:crash   # runner dies after the provider accepts; restart reconciles to one transfer
+npm run demo:up -- --no-reset
 ```
 
-### Pointing the board somewhere else
+Open the controller tab first, then the AP lead tab:
 
-`/app/?host=wss://…&db=remit-to` or `VITE_SPACETIME_HOST` / `VITE_SPACETIME_DB` at build time. Tokens are scoped per target.
+- [Controller](http://localhost:5173/app/?persona=controller&demo&load=L-2041)
+- [AP lead](http://localhost:5173/app/?persona=ap&demo&load=L-2029)
+- [Landing page](http://localhost:5173/)
 
-## Status
+The services use ports `3000`, `4310`, `4311`, and `5173`. Press **Ctrl+C** to stop processes started by the demo command. Follow the [two-minute demo guide](docs/demo-script.md) for the presentation sequence and recovery clip.
 
-| Component | State |
+> **Updating an older demo:** the extraction schema now requires `load_reference`. Restart with the default `npm run demo:up` to reset and reseed before using the regenerated clients. Existing demo data is not migrated.
+
+## Verification
+
+The policy tests and scorer run without dependencies, API keys, or network access:
+
+```sh
+npm test
+npm run demo
+npm run score
+```
+
+For the live suite, start `spacetime start` in a separate terminal and stop the demo services. These commands reset local demo data:
+
+```sh
+npm run reset
+npm run test:live
+```
+
+| Check | Result |
 | --- | --- |
-| Policy core (8 rules, 13 checks per invoice, `checkApproval`), 22 offline tests, 36-case scorer | Real. 36/36 exact, 0/24 false holds, 0/12 unsafe requests on synthetic fixtures. |
-| SpacetimeDB module: 11 tables, 11 reducers, sender-derived actors | Real, published locally on 2.13. |
-| Refusal-as-committed-event | Verified: return commits the audit row, throw rolls it back. |
-| Live integration test (`agent/live.test.ts`) | 12/12: redirect, duplicate race, self-approve and agent-approve refused, stale approval, runner transitions, crash-after-accept recovery, every refusal attributed to the real sender. |
-| Agent worker | Real. Claude vision reads the rendered PDFs; typed fields match ground truth on all 5 invoices; explanation and escalation email written by Claude from the policy result. Labeled manual fallback without a key. |
-| Web app | Real. Landing with live read-only embed; board with decision banner, labeled checks, lifecycle, per-persona tabs, deep links. |
-| Payment runner | Real. Idempotency key persisted before dispatch; restart reconciles by stored key. |
-| Payment provider | In-process mock, labeled everywhere it appears. No bank, no sandbox. |
-| Carrier authority, bank-change verification | Seeded state, not live lookups. |
+| Offline policy and scoring tests | **22 passed** |
+| Live integration tests | **15 passed**, including approval invalidation, transfer ownership, duplicate races, and crash recovery |
+| Synthetic development scorer | **36/36** exact decisions; **0/24** false holds; **0/12** unsafe requests |
 
-## Read in this order
+The scorer evaluates policy against typed synthetic fixtures. It does **not** measure document extraction accuracy or production fraud detection, and it is not a blind benchmark. Live tests use manual extraction inputs and the mock provider.
 
-1. [Build plan](docs/plan.html): positioning, schedule, demo script, judge answers.
-2. [Contracts](CONTRACTS.md): invariants, tables, reducers, lifecycle, acceptance gates.
-3. [Policy core](module/rules.ts): `evaluateSettlement` and `checkApproval`.
-4. [Module](module/src/index.ts): the reducers that enforce it.
-5. [Live test](agent/live.test.ts): the proof, one test per gate.
+Build the web app and database module separately:
 
-Never trust a client's claimed role, reservation list, assignment, bank-change flag or approval snapshot. The reducer derives the actor from `ctx.sender` and recomputes policy from trusted rows.
+```sh
+npm run build
+npm run build --prefix module
+```
+
+## Scope and limitations
+
+The prototype supports one USD linehaul obligation per delivered load. Carrier authority, verified assignments, bank verification, and document associations are seeded. Claude reads the invoice PDFs; supporting rate, delivery, and assignment facts come from that seeded state. Persona binding is a convenience for a disposable local demo, not production authentication.
+
+Real payment rails, live authority lookup, assignment-release processing, accessorials, partial payments, general-ledger integration, policy learning, and a reconciliation workflow are outside this build. Rejected, failed, and uncertain requests retain their reservations.
+
+## Explore the implementation
+
+1. [Contracts and acceptance gates](CONTRACTS.md) — the guarantees and how they are tested.
+2. [Policy](module/rules.ts) — settlement decisions and approval checks.
+3. [Database reducers](module/src/index.ts) — identity checks, reservations, snapshots, and state transitions.
+4. [Agent worker](agent/worker.ts) — extraction, explanations, and payment requests.
+5. [Live tests](agent/live.test.ts) — the complete workflow and failure cases.
+
+The [demo guide](docs/demo-script.md) covers presentation and troubleshooting. The [build plan](docs/plan.html) records the original scope and schedule. Generated client bindings live in `bindings/`, the Vite app in `web/`, and synthetic fixtures and document rendering in `world/`.

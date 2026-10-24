@@ -17,7 +17,7 @@ export function projectReview(conn: DbConnection, loadId: string, invoiceDocumen
     load: { id: load.id, carrier_id: load.carrierId, rate_cents: Number(load.rateCents), delivered: load.delivered, rate_document_id: load.rateDocumentId, pod_document_id: load.podDocumentId ?? null },
     carrier: { id: carrier.id, authority: carrier.authority as "active" | "revoked" },
     invoice: {
-      document_id: invoiceDoc.id, carrier_id: invoiceDoc.carrierId, load_id: invoiceDoc.loadId ?? "", invoice_number: extraction.invoiceNumber,
+      document_id: invoiceDoc.id, carrier_id: invoiceDoc.carrierId, load_id: extraction.loadReference, invoice_number: extraction.invoiceNumber,
       invoice_at: iso(extraction.invoiceAt), currency: extraction.currency, linehaul_cents: Number(extraction.linehaulCents),
       accessorials_cents: Number(extraction.accessorialsCents), total_cents: Number(extraction.totalCents),
       remit_to: { kind: extraction.remitToKind as Payee["kind"], id: extraction.remitToId }, confidence: extraction.confidence,

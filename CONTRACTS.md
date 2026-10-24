@@ -17,11 +17,12 @@ One builder. No owner table. The schedule is in `docs/plan.html`.
 1. One unresolved or paid obligation reserves a load regardless of payee, invoice number, worker, or restart. A normalized carrier/invoice key also blocks the same invoice being attached to another load.
 2. Only trusted assignment records select a payee. Extracted remit-to text is compared with that result; it never edits the assignment or bank directory.
 3. The requester cannot approve their own request. Another authorized AP lead or controller may approve it within their limit. The agent cannot approve anything.
-4. An approval binds an immutable amount, currency, payee, bank destination version, and evidence/policy snapshot digest. Changes before dispatch invalidate the approval.
+4. An approval binds an immutable amount, currency, payee, bank destination version, and evidence/policy snapshot digest, including every typed invoice field used by policy. Corrections before dispatch invalidate the approval even if the agreed payment amount and policy verdict stay unchanged. Display-only prose is excluded.
 5. A payment identity (idempotency key) and its exact payload are persisted before a provider call. Restart or uncertainty never creates a new payment identity for the same obligation.
 6. A provider-accepted transfer is `submitted`, not settled. An ambiguous response is `unknown`, not `failed` and not permission to pay again. The mock provider's terminal success is `simulated_settled` and is labeled as such everywhere it appears.
 7. A refusal preserves business state and produces a committed refusal event. The one logged exception: a claim or approval that finds a stale snapshot returns the request to pending and re-binds it. **Verified on spacetimedb 2.13.0 (TypeScript module, local):** a reducer that inserts an audit row and returns normally commits it; a reducer that inserts and then throws `SenderError` rolls the row back. Refusals therefore write `decision_log` and return; they never throw.
-8. Evidence ids must resolve to the appropriate document, carrier, load, and received-at time. An existing but unrelated document is not valid evidence.
+8. Evidence ids must resolve to the appropriate document, carrier, load, and received-at time. An existing but unrelated document is not valid evidence. The invoice's extracted load reference must independently match the load; the document's preassigned load is not a substitute.
+9. A nonempty provider transfer id belongs to one payment request. Reusing it for another request is a committed refusal that leaves both requests unchanged.
 
 ## Conventions
 
@@ -43,9 +44,9 @@ One builder. No owner table. The schedule is in `docs/plan.html`.
 | `assignment` | carrier, factor, effective_at, source NOA document id, released_at (null), verified_by. Only verified rows influence payment. |
 | `load` | id, carrier, delivered, rate_cents, rate document id, POD document id. The seed cannot mark a load paid. |
 | `document` | id, kind, carrier, load (nullable), sender, received_at, content hash, path. Immutable once received. |
-| `extraction` | document id, content hash, typed invoice fields, confidence, model/prompt version, Claude explanation text. Cannot activate assignments. |
+| `extraction` | document id, content hash, typed invoice fields including `load_reference`, confidence, model/prompt version, Claude explanation text. Cannot activate assignments. |
 | `settlement` | load, invoice document, normalized invoice number, agreed amount, policy payee, decision, rule results, evidence ids, snapshot digest, drafted escalation email. |
-| `payment_request` | id, `load_id` (unique), `invoice_key` (unique, carrier + normalized number), immutable amount/currency/payee/bank version/snapshot digest, requested_by, state, idempotency key, frozen payload, transfer id (unique, optional), last outcome. |
+| `payment_request` | id, `load_id` (unique), `invoice_key` (unique, carrier + normalized number), immutable amount/currency/payee/bank version/snapshot digest, requested_by, state, idempotency key, frozen payload, transfer id (nonempty ids have unique ownership enforced by the outcome reducer), last outcome. |
 | `approval` | request id, snapshot digest, approver identity, decision, reason, time. |
 | `decision_log` | id, actor, operation, outcome (`ok` / `refused` / `reserved` / ...), reason, rule results, evidence ids, load/request ids, time. Append-only. |
 
@@ -59,7 +60,7 @@ Dropped from the earlier draft: `question`, `sim_clock`. Claude drafts the escal
 | `seed_world` | controller, world | Three stories plus two filler clean loads, the March NOA assignment, all documents. Idempotent; refused if already seeded. |
 | `attach_document_file` | controller, world | Records the content hash and rendered path of a seeded document. Re-attaching the same hash is a no-op; a different hash is refused because received evidence is immutable. |
 | `update_carrier_bank` | controller | Bumps a carrier's verified bank destination version (or marks a change pending). Every pending or approved request to that carrier returns to pending and is re-bound to the new version, so it needs a new approval; while a change is pending, R8 holds it and no approval can bind. |
-| `record_extraction` | agent | Typed fields for an existing document hash. Cannot touch assignments. |
+| `record_extraction` | agent | Typed fields, including the load reference as read, for an existing document hash. Changed policy facts return a pending/approved request to pending and require a new approval. A changed invoice key stays held with its original reservation; dispatched requests retain their frozen payment. Cannot touch assignments. |
 | `propose_settlement` | agent | Re-runs `evaluateSettlement` on trusted rows; writes `settlement` and `decision_log`. |
 | `request_payment` | agent, ap_lead | Re-checks policy; inserts `payment_request` whose unique `load_id` and `invoice_key` indexes form the atomic reservation. A refusal commits a `decision_log` row and makes no business mutation. |
 | `approve_payment` / `reject_payment` | ap_lead, controller | `checkApproval` with the actor from `ctx.sender`; the submitted snapshot digest must match the stored one. Rejection needs a reason. |
@@ -76,7 +77,7 @@ rejected   pending*     unknown       failed
                   submitted / failed
 ```
 
-`pending*`: the prior approval is invalidated when the snapshot changes before dispatch; the request is re-bound to the current trusted rows and needs a new approval. Only the runner may report provider outcomes. Rejected and failed requests keep their reservation until a controller reconciles them.
+`pending*`: the prior approval is invalidated when the snapshot changes before dispatch; the request is re-bound to the current trusted rows and needs a new approval. Corrections that change the reserved invoice identity stay held with the original reservation; there is no automatic re-keying or reconciliation workflow in this slice. Only the runner may report provider outcomes. Rejected and failed requests keep their reservation until a controller reconciles them.
 
 1. `request_payment` atomically creates the request and both reservations. Two simultaneous requests for one load leave one reservation and at most one executable request, even with different payees.
 2. Approval records the exact snapshot. `claim_payment` re-checks it against current trusted rows, then freezes the payload.
@@ -110,7 +111,7 @@ AP approval ceiling: 500,000 cents, further restricted by the actor's limit. Con
 
 ## Acceptance gates
 
-`live` is `agent/live.test.ts` (12 tests, fresh database, five identities). `rules` is `module/rules.test.ts`. `scoring` is `world/scoring.test.ts`.
+`live` is `agent/live.test.ts` (15 tests, fresh database, five identities). `rules` is `module/rules.test.ts`. `scoring` is `world/scoring.test.ts`.
 
 | Gate | Check | Verified by |
 | --- | --- | --- |
@@ -123,4 +124,7 @@ AP approval ceiling: 500,000 cents, further restricted by the actor's limit. Con
 | Crash after accept | Mock accepts; runner killed before `record_payment_outcome`; restart reconciles to one transfer and one `submitted` event. | live: "crash after accept"; `npm run demo:crash` |
 | Audit | Business refusal commits a `decision_log` row; business state unchanged; actor is `ctx.sender`. | live: "every refusal in this run"; 2.13 commit/rollback probe |
 | Evidence boundary | Wrong-load POD, nonexistent NOA, future evidence, malformed extraction, unknown currency: all hold. | rules: "wrong-load POD", "assignment evidence", "fail closed" |
+| Extracted load reference | Wrong or empty extracted load reference holds, even when the seeded document points at the requested load; agent preview and reducer agree. | live: "invoice matching" |
+| Extraction correction | Changed invoice facts invalidate approval before dispatch; stale digests and claims are refused; an unchanged invoice identity can be approved again, while a changed identity retains its original reservation and stays held. | live: "extraction corrections" |
+| Transfer ownership | Reusing a provider transfer for another obligation is refused without changing business state; a distinct transfer and repeat notifications still work. | live: "provider transfer ids" |
 | Scoring isolation | Agent cannot read expected outputs; missing cases fail. | scoring: all three tests |

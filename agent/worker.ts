@@ -53,7 +53,7 @@ async function readInvoice(docId: string): Promise<boolean> {
       };
       const x = await extractInvoice(pdf, doc.contentHash, roster);
       await agent.reducers.recordExtraction({
-        documentId: docId, contentHash: doc.contentHash, invoiceNumber: x.invoiceNumber, invoiceAt: ts(x.invoiceAt), currency: x.currency,
+        documentId: docId, contentHash: doc.contentHash, invoiceNumber: x.invoiceNumber, loadReference: x.loadReference, invoiceAt: ts(x.invoiceAt), currency: x.currency,
         linehaulCents: BigInt(x.linehaulCents), accessorialsCents: BigInt(x.accessorialsCents), totalCents: BigInt(x.totalCents),
         remitToKind: x.remitTo?.kind ?? "unknown", remitToId: x.remitTo?.id ?? "", confidence: x.confidence,
         model: x.model, promptVersion: x.promptVersion, method: "claude", explanation: x.explanation,
@@ -68,7 +68,7 @@ async function readInvoice(docId: string): Promise<boolean> {
   const m = manualExtractions.find(x => x.documentId === docId);
   if (!m) { log(`${docId} no reader available and no manual fixture; skipped`); return false; }
   await agent.reducers.recordExtraction({
-    documentId: docId, contentHash: doc.contentHash, invoiceNumber: m.invoiceNumber, invoiceAt: ts(m.invoiceAt), currency: m.currency,
+    documentId: docId, contentHash: doc.contentHash, invoiceNumber: m.invoiceNumber, loadReference: m.loadReference, invoiceAt: ts(m.invoiceAt), currency: m.currency,
     linehaulCents: BigInt(m.linehaulCents), accessorialsCents: BigInt(m.accessorialsCents), totalCents: BigInt(m.totalCents),
     remitToKind: m.remitTo.kind, remitToId: m.remitTo.id, confidence: m.confidence,
     model: "none", promptVersion: "manual-1", method: "manual", explanation: "Manual extraction fallback: fields typed from the fixture, not read by a model.",

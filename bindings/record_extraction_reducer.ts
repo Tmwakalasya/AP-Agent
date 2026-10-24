@@ -14,6 +14,7 @@ export default {
   documentId: __t.string(),
   contentHash: __t.string(),
   invoiceNumber: __t.string(),
+  loadReference: __t.string(),
   invoiceAt: __t.timestamp(),
   currency: __t.string(),
   linehaulCents: __t.u64(),
