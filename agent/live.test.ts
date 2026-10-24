@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { Timestamp } from "spacetimedb";
+import { spawn } from "node:child_process";
 import { connect, ensurePersona, sleep } from "./lib/connect.ts";
+import { startMockProvider } from "./mock-provider.ts";
 import type { DbConnection } from "../bindings/index.ts";
 
 // Live integration test against a freshly published local database.
@@ -211,6 +213,53 @@ test("runner: claim freezes the payload; outcomes are idempotent and transitions
   assert.equal(requestFor(runner, "L-2029")!.transferId, "tr_1");
 });
 
+test("crash after accept: a restarted runner reconciles by the stored key; one transfer, one submitted event", async () => {
+  const { controller } = conns;
+  const provider = await startMockProvider({ port: 0, latencyMs: 0, settleAfterMs: 500, stateFile: null });
+  // Async spawn: the mock provider lives in this process and must keep serving while the runner runs.
+  const run = (...args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>(done => {
+    const child = spawn(process.execPath, ["--import", "tsx", "agent/runner.ts", "--once", ...args], { env: { ...process.env, PROVIDER_URL: provider.url } });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", d => stdout += d); child.stderr.on("data", d => stderr += d);
+    child.on("close", status => done({ status, stdout, stderr }));
+  });
+  try {
+    const req = requestFor(controller, "L-2033")!;
+    assert.equal(req.state, "approved");
+
+    // Run 1: the provider accepts; the process dies before recording the outcome.
+    const crashed = await run("--crash-after-accept");
+    assert.equal(crashed.status, 137, crashed.stdout + crashed.stderr);
+    await sleep(200);
+    const mid = requestFor(controller, "L-2033")!;
+    assert.equal(mid.state, "submitting");
+    assert.ok(mid.idempotencyKey.startsWith("rt-"));
+    assert.equal(provider.transfers().length, 1);
+    assert.equal(mid.frozenPayload, provider.transfers()[0].payload);
+
+    // Run 2: a fresh process asks the provider about the stored key first.
+    const restarted = await run();
+    assert.equal(restarted.status, 0, restarted.stdout + restarted.stderr);
+    assert.match(restarted.stdout, /already holds .* for that key/);
+    await sleep(200);
+    const after = requestFor(controller, "L-2033")!;
+    assert.equal(after.state, "submitted");
+    assert.equal(after.transferId, provider.transfers()[0].transfer_id);
+    assert.equal(provider.transfers().length, 1);
+    const submittedEvents = logs(controller, "record_payment_outcome").filter(l => l.requestId === req.id && / submitting → submitted/.test(l.reason));
+    assert.equal(submittedEvents.length, 1);
+
+    // Run 3: after the mock's settle delay the obligation reaches its labeled terminal state.
+    await sleep(600);
+    const settled = await run();
+    assert.equal(settled.status, 0, settled.stdout + settled.stderr);
+    await sleep(200);
+    assert.equal(requestFor(controller, "L-2033")!.state, "simulated_settled");
+    assert.equal(provider.transfers().length, 1);
+  } finally {
+    await provider.close();
+  }
+});
 test("every refusal in this run is a committed decision_log row attributed to the real sender", async () => {
   const { controller } = conns;
   const refusals = logs(controller).filter(l => l.outcome === "refused");

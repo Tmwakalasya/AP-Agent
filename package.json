@@ -14,6 +14,9 @@
     "seed": "npx tsx agent/seed.ts && npx tsx agent/worker.ts",
     "agent": "npx tsx agent/worker.ts",
     "agent:watch": "npx tsx agent/worker.ts --watch",
+    "provider": "npx tsx agent/mock-provider.ts",
+    "runner": "npx tsx agent/runner.ts",
+    "demo:crash": "npx tsx agent/runner.ts --once --crash-after-accept; npx tsx agent/runner.ts --once",
     "publish:local": "spacetime publish remit-to --server local --yes",
     "reset": "spacetime publish remit-to --server local --delete-data=always --yes && spacetime generate --lang typescript --out-dir ./bindings --module-path ./module"
   },
