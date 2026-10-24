@@ -2,7 +2,9 @@
   "name": "remit-to",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.18.0" },
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "test": "node --test module/*.test.ts world/*.test.ts",
     "test:live": "node --import tsx --test agent/live.test.ts",
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "tsx": "^4.19.0",
-    "typescript": "~5.6.2"
+    "typescript": "~5.6.2",
+    "vite": "^6.4.5"
   }
 }

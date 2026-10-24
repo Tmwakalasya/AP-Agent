@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remit-To · Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body class="app">
+<div class="appbar">
+  <a class="brand" href="/"><span class="glyph">⟂</span>REMIT-TO <span style="color:var(--panel-muted)">/ board</span></a>
+  <div class="right">
+    <span id="conn">connecting…</span>
+    <span class="persona" id="persona">—</span>
+    <a href="/app/?persona=ap">ap tab</a>
+    <a href="/app/?persona=controller">controller tab</a>
+    <a href="/app/?persona=viewer">viewer</a>
+  </div>
+</div>
+<div id="board"></div>
+<div class="appfoot">
+  <span>offline scorer · <b>36/36</b> exact · <b>0/24</b> false holds · <b>0/12</b> unsafe requests · synthetic fixtures, not a blind eval</span>
+  <span>payment provider: <b>in-process mock</b> · no funds move</span>
+</div>
+<script type="module" src="/src/app.ts"></script>
+</body>
+</html>

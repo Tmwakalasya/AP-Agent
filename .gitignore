@@ -11,3 +11,6 @@ web/node_modules/
 agent/node_modules/
 spacetime.local.json
 agent/.tokens/
+dist/
+web/public/docs/
+world/out/

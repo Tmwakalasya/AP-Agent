@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remit-To — Pay the right party. Prove it.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+
+<nav class="top"><div class="wrap">
+  <a class="brand" href="/"><span class="glyph">⟂</span>REMIT-TO</a>
+  <div class="links"><a href="#stories">Stories</a><a href="#how">How it works</a><a href="#evidence">Evidence</a></div>
+  <a class="btn" href="/app/?persona=controller">Open the board</a>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <span class="glyph">⟂</span>
+  <h1 id="headline" aria-label="Pay the right party. Prove it."><span class="line" data-text="PAY THE RIGHT PARTY."></span><span class="line" data-text="PROVE IT."></span></h1>
+  <p class="subline rise">The agent reads &nbsp;·&nbsp; The policy decides &nbsp;·&nbsp; The database enforces</p>
+  <p class="lede rise">Remit-To is an autonomous accounts-payable agent for freight brokers. It matches invoices to proof, catches duplicates and payment redirects, and holds anything it cannot prove.</p>
+  <div class="ctas rise"><a class="btn" href="/app/?persona=controller">Open live board →</a><a class="btn outline" href="#demo">Watch the 2-min demo</a></div>
+
+  <div class="cmd rise"><pre id="cmd-out"><span class="prompt">&gt;</span> remit-to evaluate L-2041
+  decision    <span class="hold">HOLD</span>
+  payee       factor F-01 · Meridian Capital        (policy)
+  requested   carrier C-301 · Ridgeline Transport   (June invoice)
+  failed      R2  verified assignment selects F-01; invoice or email instructions cannot change it
+  evidence    D-noa-0302 · D-inv-0612 · D-rate-2041 · D-pod-2041</pre><button id="copy" title="Copy">copy</button></div>
+
+  <div class="panel-frame rise" id="board">
+    <div class="tag"><span class="dot" id="live-dot"></span> <span id="live-label">live · read-only · spacetimedb subscription</span></div>
+    <div id="live-board"></div>
+  </div>
+  <div class="strip"><div class="track">
+    <span>Claude</span><span>·</span><span>SpacetimeDB</span><span>·</span><span>TypeScript</span><span>·</span><span>Node</span><span>·</span><span>No funds move</span><span>·</span>
+    <span>Claude</span><span>·</span><span>SpacetimeDB</span><span>·</span><span>TypeScript</span><span>·</span><span>Node</span><span>·</span><span>No funds move</span><span>·</span>
+  </div></div>
+</div></header>
+
+<section id="how"><div class="wrap">
+  <div class="marker reveal">How it works</div>
+  <h2 class="reveal">One policy. Two call sites. Zero trust in prose.</h2>
+  <p class="sub reveal">The model never decides who gets paid. It produces typed fields and an explanation. The same <code class="mono">rules.ts</code> runs in the agent to explain, and inside the reducer transaction to decide.</p>
+  <div class="cols3 reveal">
+    <div><div class="num">01</div><h3>Read</h3><p>Claude reads the rendered invoice, rate confirmation, POD, NOA and emails. It returns typed fields with a confidence score and a plain-language explanation. It cannot touch assignments, bank records or approvals.</p></div>
+    <div><div class="num">02</div><h3>Decide</h3><p>Ten deterministic rules in <code>rules.ts</code> select the amount from the rate con and the payee from verified assignments. Any failed rule is a hold with the rule id, reason and evidence ids attached.</p></div>
+    <div><div class="num">03</div><h3>Enforce</h3><p>SpacetimeDB reducers re-run the policy on trusted rows, reserve the load and invoice key atomically, and derive the actor from the connection identity. The agent identity cannot approve. Refusals commit to the audit log.</p></div>
+  </div>
+</div></section>
+
+<section id="stories"><div class="wrap">
+  <div class="marker reveal">Three stories</div>
+  <h2 class="reveal">Proven on freight, where payment-redirect fraud is worst.</h2>
+  <p class="sub reveal">Three seeded loads run end to end through the same path: documents in, decision out, approval by a different human, payment status that never lies.</p>
+  <div class="stories">
+    <div class="story reveal">
+      <div class="shot"><img src="/shots/redirect.png" alt="" onerror="this.remove()"><div class="ph"><div class="big"><span>L-2041 · Ridgeline</span><span style="color:var(--hold)">■ HOLD R2</span></div>
+        <div class="ln"><span>policy payee</span><b>F-01 Meridian</b></div><div class="ln"><span>requested</span><b style="color:var(--hold)">carrier C-301</b></div>
+        <div class="ln"><span>NOA effective</span><b>2026-03-02</b></div><div class="ln"><span>email "updated banking"</span><b>unverified</b></div><div class="ln"><span>escalation</span><b>drafted → factor</b></div></div></div>
+      <div class="body"><div class="label"><span>Redirect</span><span class="res hold">■ Hold</span></div>
+        <h3>June invoice vs. March NOA</h3><p>A June invoice and an "updated banking" email ask us to pay the carrier directly. A verified March assignment says the factor. An unverified email cannot replace a verified payment instruction.</p></div>
+    </div>
+    <div class="story reveal" style="transition-delay:.1s">
+      <div class="shot"><img src="/shots/duplicate.png" alt="" onerror="this.remove()"><div class="ph"><div class="big"><span>L-2037 · Blue Mesa · re-bill</span><span style="color:var(--hold)">■ HOLD R3</span></div>
+        <div class="ln"><span>existing obligation</span><b>INV-5521 · reserved</b></div><div class="ln"><span>new invoice</span><b style="color:var(--hold)">INV-5521-R</b></div>
+        <div class="ln"><span>concurrent requests</span><b>2 → 1 reserved · 1 refused</b></div><div class="ln"><span>refusal</span><b>committed to decision_log</b></div></div></div>
+      <div class="body"><div class="label"><span>Duplicate</span><span class="res hold">■ Hold</span></div>
+        <h3>Same load, new invoice number</h3><p>Two requests race for the same load. Unique indexes inside one transaction leave exactly one reservation. The loser's refusal is a committed audit row, not an exception.</p></div>
+    </div>
+    <div class="story reveal" style="transition-delay:.2s">
+      <div class="shot"><img src="/shots/clean.png" alt="" onerror="this.remove()"><div class="ph"><div class="big"><span>L-2037 · Blue Mesa</span><span style="color:var(--ok)">□ APPROVED</span></div>
+        <div class="ln"><span>rate con</span><b>$1,850.00</b></div><div class="ln"><span>invoice</span><b>$1,850.00 · INV-5521</b></div><div class="ln"><span>POD</span><b>signed · Jun 9</b></div>
+        <div class="ln"><span>requested by</span><b>agent</b></div><div class="ln"><span>approved by</span><b style="color:var(--ok)">controller · not requester</b></div></div></div>
+      <div class="body"><div class="label"><span>Clean</span><span class="res">□ Approved</span></div>
+        <h3>Match, request, approve, submit</h3><p>Invoice matches rate con and POD. The agent requests; a different human approves; the runner submits with a persisted idempotency key. Status moves to <span class="mono">submitted</span>, then <span class="mono">simulated_settled</span>, live.</p></div>
+    </div>
+  </div>
+</div></section>
+
+<section id="evidence"><div class="wrap">
+  <div class="marker reveal">Evidence</div>
+  <h2 class="reveal">Measured on what we actually tested.</h2>
+  <p class="sub reveal">36 synthetic development cases scored against an explicit answer key the agent never reads. Not a blind benchmark. Not a production catch rate.</p>
+  <div class="stats reveal">
+    <div><div class="n"><span class="count" data-to="36">0</span><small>/36</small></div><div class="l">exact decision · payee · amount · rule</div></div>
+    <div><div class="n"><span class="count" data-to="0">0</span><small>/24</small></div><div class="l">false holds on clean cases</div></div>
+    <div><div class="n"><span class="count" data-to="0">0</span><small>/12</small></div><div class="l">unsafe requests on exception cases</div></div>
+  </div>
+  <div class="honest reveal">
+    <div><h4>Real</h4><ul><li>Deterministic policy, 10 rules, 22 tests</li><li>SpacetimeDB tables, reducers, live subscriptions</li><li>Sender-derived identity and separation of duties</li><li>Atomic load + invoice reservation</li><li>Claude extraction and explanation</li><li>Idempotency key persisted before dispatch</li><li>Crash-after-accept recovery test</li></ul></div>
+    <div><h4>Simulated</h4><ul><li>Payment provider (in-process mock, labeled)</li><li><span class="mono">simulated_settled</span> status</li><li>Carrier authority status (seeded)</li><li>Bank-change callback verification</li><li>Demo personas (first-claim, still sender-bound)</li></ul></div>
+    <div><h4>Not built</h4><ul><li>Real bank rails or TriumphPay</li><li>Accessorials, detention, lumper</li><li>Release processing, conflicting assignments</li><li>General ledger</li><li>Live authority lookup</li><li>Policy learning</li></ul></div>
+  </div>
+  <p class="note reveal">No money moved. No real dollars saved are claimed. Extraction errors are reported separately from policy errors.</p>
+</div></section>
+
+<section id="lifecycle"><div class="wrap">
+  <div class="marker reveal">Payment lifecycle</div>
+  <h2 class="reveal">Submitted is not settled.</h2>
+  <div class="life reveal">
+    <pre>pending ──▶ approved ──▶ submitting ──▶ submitted ──▶ simulated_settled
+   │            │              │              │
+rejected     pending*       <span class="hold">unknown</span>         failed
+                               │
+                      submitted / failed
+
+pending*  prior approval invalidated when the snapshot changes
+<span class="hold">unknown</span>   obligation stays reserved; reconcile the stored key</pre>
+    <div class="quote">Unknown is not failed.<br>Unknown is not permission to pay again.<small>A timeout after a possible send never creates a new payment identity. The runner restarts, finds its stored idempotency key, and reconciles to one transfer.</small></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap"><span>⟂ Remit-To</span><span>Built solo at Cal Hacks 13.0 · Oct 2026</span><span>No funds move</span></div></footer>
+<script type="module" src="/src/landing.ts"></script>
+</body>
+</html>
