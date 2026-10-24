@@ -1,0 +1,11 @@
+{
+  "name": "remit-to",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "test": "node --test module/*.test.ts world/*.test.ts",
+    "demo": "node world/demo.ts",
+    "score": "node world/score.ts"
+  }
+}

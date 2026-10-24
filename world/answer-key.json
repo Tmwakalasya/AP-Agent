@@ -1,0 +1,398 @@
+[
+  {
+    "case_id": "clean-001",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-001"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-002",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-002"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-003",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-003"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-004",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-004"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-005",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-005"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-006",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-006"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-007",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-007"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-008",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-008"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-009",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-009"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-010",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-010"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-011",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-011"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-012",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-012"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-013",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-013"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-014",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-014"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-015",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-015"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-016",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-016"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-017",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-017"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-018",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-018"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-019",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-019"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-020",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-020"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-021",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-021"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-022",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-022"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-023",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-023"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "clean-024",
+    "category": "clean",
+    "decision": "request_approval",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-024"
+    },
+    "failed_rule": null
+  },
+  {
+    "case_id": "duplicate-025",
+    "category": "duplicate",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-025"
+    },
+    "failed_rule": "R3"
+  },
+  {
+    "case_id": "duplicate-026",
+    "category": "duplicate",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-026"
+    },
+    "failed_rule": "R3"
+  },
+  {
+    "case_id": "duplicate-027",
+    "category": "duplicate",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-027"
+    },
+    "failed_rule": "R3"
+  },
+  {
+    "case_id": "duplicate-028",
+    "category": "duplicate",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-028"
+    },
+    "failed_rule": "R3"
+  },
+  {
+    "case_id": "duplicate-029",
+    "category": "duplicate",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-029"
+    },
+    "failed_rule": "R3"
+  },
+  {
+    "case_id": "duplicate-030",
+    "category": "duplicate",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "carrier",
+      "id": "C-030"
+    },
+    "failed_rule": "R3"
+  },
+  {
+    "case_id": "redirect-031",
+    "category": "redirect",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "factor",
+      "id": "F-01"
+    },
+    "failed_rule": "R2"
+  },
+  {
+    "case_id": "redirect-032",
+    "category": "redirect",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "factor",
+      "id": "F-01"
+    },
+    "failed_rule": "R2"
+  },
+  {
+    "case_id": "redirect-033",
+    "category": "redirect",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "factor",
+      "id": "F-01"
+    },
+    "failed_rule": "R2"
+  },
+  {
+    "case_id": "redirect-034",
+    "category": "redirect",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "factor",
+      "id": "F-01"
+    },
+    "failed_rule": "R2"
+  },
+  {
+    "case_id": "redirect-035",
+    "category": "redirect",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "factor",
+      "id": "F-01"
+    },
+    "failed_rule": "R2"
+  },
+  {
+    "case_id": "redirect-036",
+    "category": "redirect",
+    "decision": "hold",
+    "amount_cents": 240000,
+    "payee": {
+      "kind": "factor",
+      "id": "F-01"
+    },
+    "failed_rule": "R2"
+  }
+]

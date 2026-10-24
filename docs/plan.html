@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remit-To Build Plan</title>
+<style>
+:root { color-scheme: light dark; --bg:#faf9f6; --ink:#222724; --muted:#626b64; --line:#dcded7; --panel:#fff; --accent:#1d6655; --soft:#eaf3ee; --warn:#79531c; }
+@media (prefers-color-scheme:dark) { :root { --bg:#151a17; --ink:#e6ece7; --muted:#acb9af; --line:#364239; --panel:#1e2621; --accent:#8fd4b8; --soft:#24382d; --warn:#e5bd7a; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+main { max-width:960px; margin:auto; padding:48px 24px 90px; }
+a { color:var(--accent); text-underline-offset:3px; }
+h1 { font-size:clamp(36px,7vw,60px); line-height:1.05; letter-spacing:-2px; margin:8px 0 16px; }
+h2 { font-size:25px; line-height:1.25; margin:48px 0 16px; border-top:1px solid var(--line); padding-top:22px; scroll-margin-top:16px; }
+h3 { font-size:18px; margin:24px 0 8px; }
+p { margin:12px 0; }
+.eyebrow,.muted,figcaption { color:var(--muted); font-size:14px; }
+.eyebrow { letter-spacing:1px; text-transform:uppercase; }
+.lead { font-size:22px; line-height:1.45; max-width:760px; }
+nav { display:flex; flex-wrap:wrap; gap:8px 18px; margin:28px 0; font-size:14px; }
+nav a { text-decoration:none; }
+.callout { border-left:4px solid var(--accent); border-radius:0 8px 8px 0; background:var(--soft); padding:14px 20px; margin:24px 0; }
+.callout p:first-child { margin-top:0; } .callout p:last-child { margin-bottom:0; }
+.table-wrap { overflow-x:auto; margin:18px 0; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { text-align:left; vertical-align:top; padding:12px; border-bottom:1px solid var(--line); }
+th { background:var(--soft); font-weight:650; }
+code,pre { font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
+code { background:var(--soft); padding:2px 5px; border-radius:4px; overflow-wrap:anywhere; }
+pre { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; overflow-x:auto; }
+pre code { background:none; padding:0; }
+ul,ol { padding-left:24px; } li { margin:8px 0; }
+figure { margin:24px 0; }
+.flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.card { padding:18px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+.card strong { display:block; margin:4px 0 10px; }
+.card p { font-size:14px; margin:0; }
+.badge { color:var(--accent); font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.5px; }
+.gates { list-style:none; padding:0; }
+.gates li { display:grid; grid-template-columns:95px 1fr; gap:18px; padding:16px 0; margin:0; border-bottom:1px solid var(--line); }
+.gates strong { color:var(--accent); }
+.caption { color:var(--muted); font-size:13px; }
+footer { border-top:1px solid var(--line); margin-top:48px; padding-top:20px; color:var(--muted); font-size:13px; }
+@media (max-width:640px) { main { padding:28px 16px 60px; } .flow { grid-template-columns:1fr; } .lead { font-size:20px; } th,td { padding:9px; } .gates li { grid-template-columns:70px 1fr; gap:12px; } }
+@media print { nav { display:none; } main { max-width:none; padding:0; } h2,h3 { break-after:avoid; } .card,tr { break-inside:avoid; } body { font-size:11pt; } }
+</style>
+</head>
+<body><main>
+<header>
+<p class="eyebrow">Build plan · Revised October 23, 2026</p>
+<h1>Remit-To</h1>
+<p class="lead">Check who should be paid, catch conflicting instructions, and show the evidence before payment.</p>
+<p>For the carrier-settlement or AP lead at a small freight brokerage. The demo opens with a June payment redirect that conflicts with a verified March factoring assignment. Remit-To holds the request and shows exactly why.</p>
+<p class="muted">Target: a 36-hour build with up to four people. Proposed CalHacks / Hyphenate / Spacetime fit and submission timing still require confirmation.</p>
+</header>
+<nav aria-label="Plan sections">
+<a href="#scope">Three stories</a><a href="#architecture">Architecture</a><a href="#controls">Payment controls</a><a href="#groundwork">Groundwork</a><a href="#evaluation">Evaluation</a><a href="#team">Team</a><a href="#timeline">Timeline</a><a href="#demo">Demo</a><a href="#cuts">Cuts</a><a href="#validation">Validate next</a>
+</nav>
+<div class="callout">
+<p><strong>The build decision:</strong> finish three credible stories before expanding the world. Begin with a few documents and 36 synthetic development cases. A six-month history is represented by the dated March NOA and June invoice; it does not require simulating every intervening day.</p>
+<p><strong>Current state:</strong> the repository runs an offline policy demo, tests and scorer. Authenticated reducers, document extraction, the UI and payment-provider integration are still planned.</p>
+</div>
+
+<section id="scope"><h2>1. Three stories define the MVP</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Story</th><th>Observed behavior</th><th>Evidence of completion</th></tr></thead>
+<tbody>
+<tr><td><strong>Clean invoice</strong></td><td>Match a delivered load's USD linehaul invoice to the agreed rate and POD. Prepare payment to the policy payee; a different eligible human approves.</td><td>Invoice → evidence → decision → request → approval. The live extension shows submitted and settled separately.</td></tr>
+<tr><td><strong>Duplicate</strong></td><td>Hold a second invoice against an existing obligation, including a new invoice number or changed requested payee.</td><td>One load reservation and at most one executable payment request. A concurrent reducer test proves the live guarantee.</td></tr>
+<tr><td><strong>Redirect</strong></td><td>A June request asks to pay the carrier directly while the verified March assignment selects a factor. Hold and ask for release evidence.</td><td>The factor remains the policy payee; the March NOA and failed R2 check are visible. No automatic release processing.</td></tr>
+</tbody></table></div>
+<p><strong>Keep:</strong> evidence detail, human approval, deterministic policy, a small scoreboard, and an honest payment status. <strong>Defer:</strong> detention/lumper adjudication, general-ledger accounting, full GPS streams, simulated personalities, automatic release handling, free-text scenario generation, and 1,500-load runs.</p>
+<p>Outside the supported slice, hold and ask. Do not silently deny charges or short-pay an invoice to make the demo appear autonomous.</p>
+</section>
+
+<section id="architecture"><h2>2. One owner for business state</h2>
+<figure>
+<div class="flow">
+<div class="card"><span class="badge">1 · Understand</span><strong>Documents → typed facts</strong><p>The world supplies documents. Claude extracts fields. An adapter validates shape and ties fields to source evidence. It cannot change assignments or bank details.</p></div>
+<div class="card"><span class="badge">2 · Decide</span><strong>Trusted state → policy</strong><p>Spacetime owns company records and reservations. Deterministic code selects amount and payee. Reducers recheck policy, enforce identity, and commit state changes.</p></div>
+<div class="card"><span class="badge">3 · Execute</span><strong>Approval → payment runner</strong><p>A separate identity dispatches an immutable approved request outside the transaction, then reconciles provider status. The UI subscribes to committed state.</p></div>
+</div>
+<figcaption>Planned live path. The current offline implementation covers policy decisions and approval checks using supplied fixture facts.</figcaption>
+</figure>
+<p><strong>Stack:</strong> TypeScript throughout; SpacetimeDB for live state, Node for workers, Claude for extraction/explanation, and React/Vite for the UI. Increase sandbox is an optional integration after the recovery contract is verified. Confirm versions before installing dependencies or implementing SDK-specific code.</p>
+<p>Start with a board, a load detail view containing documents and rule results, and an approval panel. The scoreboard can be a small summary. Three preset scenario buttons and manual time steps are sufficient.</p>
+<p>The draft live records and reducer boundaries are in <code>CONTRACTS.md</code>. The first system has a payment audit trail; a full accounting ledger is a separate feature.</p>
+</section>
+
+<section id="controls"><h2>3. Make the payment promise precise</h2>
+<ol>
+<li><strong>Reserve the obligation atomically.</strong> One unresolved or paid obligation per load, independent of payee. Also reserve the normalized carrier/invoice number. Two workers must not independently pass a check and create two payable requests.</li>
+<li><strong>Bind approval to an immutable snapshot.</strong> Amount, currency, payee, bank destination version and evidence/policy snapshot are approved together. Changes before dispatch invalidate the approval.</li>
+<li><strong>Persist the payment identity before sending.</strong> Store the provider key and exact payload, then claim the request transactionally. Network calls happen outside reducers.</li>
+<li><strong>Keep uncertainty visible.</strong> If the provider accepts a transfer and the runner crashes before recording it, restart must reconcile that same key/transfer. A timeout keeps the obligation reserved; it never authorizes a new payment key.</li>
+<li><strong>Separate submitted from settled.</strong> Provider acceptance means submitted. Only an authoritative terminal success means settled. Duplicate notifications must not duplicate payment events.</li>
+<li><strong>Enforce actual identity.</strong> The agent cannot approve. An AP lead cannot approve their own request. A different controller may approve an unchanged agent or AP request. Role switching is a local demo convenience using separate seeded identities.</li>
+</ol>
+<div class="callout"><p><strong>Release gate for the live runner:</strong> kill it after provider acceptance but before local acknowledgement, restart it against the same database, and demonstrate one transfer and one recorded outcome. Provider lookup/idempotency semantics must be verified first. The offline tests do not prove this guarantee.</p></div>
+<p>A business refusal must leave business state unchanged and persist an audit event. Do not throw away the transaction and claim the event survived. Test that behavior against the chosen Spacetime version.</p>
+<p>Assignment records need trusted verification. The demo's invoice-date rule is a stated policy assumption, not a claim about the legal scope of real factoring agreements. Releases and competing assignments are held for review.</p>
+</section>
+
+<section id="groundwork"><h2>4. Groundwork you can run now</h2>
+<p>Repository: <code>/Users/tuntufye/Desktop/Coding/remit-to</code>. With a Node version supporting native TypeScript (package minimum 22.18), run:</p>
+<pre><code>cd /Users/tuntufye/Desktop/Coding/remit-to
+npm test
+npm run demo
+npm run score</code></pre>
+<p>No install, keys, network calls or environment file are needed. The local run was verified with Node 25.8.1. Node strips the types; it does not perform a TypeScript compiler check.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>File</th><th>What it establishes</th></tr></thead>
+<tbody>
+<tr><td><code>module/rules.ts</code></td><td>Deterministic policy, evidence metadata checks, payee selection, duplicate detection against supplied reservations, approval permissions.</td></tr>
+<tr><td><code>module/rules.test.ts</code></td><td>Clean and factored invoices; new-number/payee duplicates; stale evidence; unsupported facts; approval separation and limits.</td></tr>
+<tr><td><code>world/fixtures.ts</code></td><td>36 development scenarios with extracted records: 24 clean, 6 duplicate, 6 redirect. No model or provider calls.</td></tr>
+<tr><td><code>world/answer-key.json</code></td><td>Explicit expected outcome, payee, amount and failed rule for every case. The policy never imports it.</td></tr>
+<tr><td><code>world/scoring.ts</code></td><td>Exact-result comparison; false holds and unsafe requests; missing, extra and repeated cases are errors.</td></tr>
+<tr><td><code>CONTRACTS.md</code></td><td>The live integration target and acceptance checks, including concurrency, restart recovery and audit persistence.</td></tr>
+</tbody></table></div>
+<p><strong>Boundary:</strong> this groundwork prepares decisions. It does not extract PDFs, authenticate a caller, reserve state durably, or move funds. The live reducer must obtain trusted facts and repeat the checks inside its reservation transaction.</p>
+</section>
+
+<section id="evaluation"><h2>5. Measure the claim you actually tested</h2>
+<p>The current 36 cases are synthetic development fixtures with repeated parameter variations. They test policy on supplied facts. They are not a blind evaluation, independent document layouts, or a production fraud benchmark.</p>
+<ul>
+<li><strong>Decision correctness:</strong> action, canonical payee, agreed amount and applicable rule must all match an explicit expectation.</li>
+<li><strong>False holds:</strong> report held clean cases divided by all clean cases, with counts.</li>
+<li><strong>Unsafe requests:</strong> report exception cases allowed through and any wrong-payee or wrong-amount requests.</li>
+<li><strong>Extraction quality:</strong> once real document processing exists, report its errors separately from policy errors.</li>
+</ul>
+<p>After the three live stories work, freeze policy and ask a teammate to author 6–12 unfamiliar document variants without changing the expected business rules. Keep them out of development. Record who authored and adjudicated them. The extraction worker must never see the answer key or scenario labels.</p>
+<p>Label any exposure amount as simulated. Do not claim real dollars saved, production catch rates or payment latency from this offline run. For live latency, include cases still unpaid instead of measuring only successful completions.</p>
+</section>
+
+<section id="team"><h2>6. Divide integration work, not just folders</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Owner</th><th>First deliverable</th><th>Depends on</th></tr></thead>
+<tbody>
+<tr><td><strong>A · World and evidence</strong></td><td>One clean document set, March NOA, June redirect, explicit expected outcomes.</td><td>C agrees extraction fields. B agrees ingestion.</td></tr>
+<tr><td><strong>B · State and controls</strong></td><td>Local module, seeded identities, one decision/request/approval flow, reservation constraints.</td><td>C shares policy inputs. Validate platform syntax first.</td></tr>
+<tr><td><strong>C · Extraction and decisions</strong></td><td>Extract the clean sample, validate it, call the policy and reducer; explain only structured results.</td><td>A's source documents, B's reducer contract.</td></tr>
+<tr><td><strong>D · UI and demo</strong></td><td>One load detail view with evidence and approval; connect before expanding the board.</td><td>B's state and identities; A's narrative.</td></tr>
+</tbody></table></div>
+<p>Agree the minimum types, role behavior and rules in the first two hours. Pair B+C on the first integrated flow by hour 6. With three people, merge D into A; with two, pair B+C and A+D and use offline payments.</p>
+</section>
+
+<section id="timeline"><h2>7. A 36-hour plan with earlier gates</h2>
+<p class="muted">Use elapsed hours until the actual deadline is confirmed. These are stop/go gates, not a promise that integrations take a fixed number of hours.</p>
+<ol class="gates">
+<li><strong>H0–2</strong><span><b>Agree the slice.</b> Assign owners, confirm sponsor fit and tool versions, run the offline core, agree contracts. Confirm the deadline.</span></li>
+<li><strong>H2–6</strong><span><b>Integrate one decision.</b> One source invoice and POD → validated extraction → reducer decision → evidence view. Use manually supplied extraction only as a visibly labeled fallback.</span></li>
+<li><strong>H6–10</strong><span><b>Close the approval loop.</b> Clean request, AP self-approval refusal, another controller's approval. Persist one reservation; exercise competing requests.</span></li>
+<li><strong>H10–16</strong><span><b>Complete the three stories.</b> Clean, duplicate and redirect all work through the same path. Add only enough document variants to expose extraction failures.</span></li>
+<li><strong>H16–22</strong><span><b>Integrate sandbox payments if ready.</b> Verify provider semantics, distinguish submitted/settled, and pass crash-after-send recovery. If blocked, select the explicit offline mode.</span></li>
+<li><strong>H22–28</strong><span><b>Challenge the behavior.</b> Run unseen variants, audit evidence and scorer isolation, fix false holds, rehearse ambiguous provider outcomes if integrated.</span></li>
+<li><strong>H28–32</strong><span><b>Freeze and record.</b> No new features. Score the final build, record the two-minute demo, verify a deterministic reset and fallback.</span></li>
+<li><strong>H32–36</strong><span><b>Rehearse and submit.</b> Test the judge walkthrough, disclose simulation boundaries, package evidence, and submit ahead of the confirmed deadline.</span></li>
+</ol>
+<p><strong>If H6 slips:</strong> stop expanding the world and pair on integration. <strong>If H16 slips:</strong> cut provider work and all extra UI. Protect the evidence-backed redirect, duplicate guard, approval behavior and honest scoreboard.</p>
+</section>
+
+<section id="demo"><h2>8. Show the catch, then show legitimate work</h2>
+<ol>
+<li><strong>0:00–0:25 — Redirect.</strong> Open the June request. Show the March NOA, required factor payee, hold and question. Explain that the system will not replace verified payment instructions with an unverified request.</li>
+<li><strong>0:25–0:55 — Clean invoice.</strong> Show matching invoice/POD and a request approved by a different eligible actor. If integrated, show the actual sandbox status; otherwise label the result simulated.</li>
+<li><strong>0:55–1:15 — Duplicate.</strong> Present the same load under a new invoice number. The reservation blocks another payment request.</li>
+<li><strong>1:15–1:40 — Approval control.</strong> AP creates a request and tries to approve it: refused. A different controller approves. Separately, an agent approval attempt is refused by role.</li>
+<li><strong>1:40–2:00 — Evidence.</strong> Show counts, false holds and unsafe requests. State which components are real, which are simulated, and which have not been implemented.</li>
+</ol>
+<p>For a live walkthrough, let a judge switch between seeded demo personas and inspect the source evidence. Offer preset clean, duplicate and redirect scenarios. An unfamiliar currency or charge should produce a clear hold, not invented policy.</p>
+<p><strong>Do not demonstrate a controller being refused merely because the agent requested payment.</strong> That contradicts the intended separation of duties. The requester and approver must be different people/identities with appropriate permissions.</p>
+</section>
+
+<section id="cuts"><h2>9. Cut surface area before correctness</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Cut first</th><th>Keep instead</th></tr></thead>
+<tbody>
+<tr><td>Free-text scenario generation and simulated coworkers</td><td>Three fixed scenarios; manual answers and time steps.</td></tr>
+<tr><td>Photo-realistic PODs and large document batches</td><td>A few legible source documents; 30–50 cases only after integration works.</td></tr>
+<tr><td>GPS detention, lumper and full accounting</td><td>USD linehaul, explicit holds for unsupported cases, a payment audit trail.</td></tr>
+<tr><td>Multiple dashboards and elaborate time controls</td><td>Board, evidence detail, approval panel and a compact score summary.</td></tr>
+<tr><td>Provider integration that cannot pass recovery tests</td><td>A visibly labeled offline payment result. No fake transfer ids or implied bank guarantee.</td></tr>
+</tbody></table></div>
+<p>Never cut evidence association, identity checks, duplicate reservation semantics, uncertainty handling or clear simulation labels. Keep a fixed-seed reset and a recorded backup. Preserve payment identities when restarting the runner; a reset must not accidentally re-send prior requests.</p>
+</section>
+
+<section id="validation"><h2>10. Validate the business and policy next</h2>
+<ul>
+<li><strong>Buyer:</strong> ask brokerage AP staff for a recent redirect or duplicate exception, its frequency, handling time and required sign-off. Determine where invoices and verified assignments currently live.</li>
+<li><strong>Domain policy:</strong> challenge assignment scope, release requirements, disputed amounts and callback verification with someone who handles carrier settlements. Capture agreed demo assumptions in the contracts.</li>
+<li><strong>Adoption:</strong> identify the smallest integration that lets an AP lead inspect a hold and approve a legitimate request. An autonomous-seat pitch is premature until exception handling and trust are demonstrated.</li>
+<li><strong>Event fit:</strong> confirm sponsor requirements, track eligibility and the submission deadline. The plan does not assume those have been checked.</li>
+<li><strong>Technical prerequisites:</strong> confirm local Spacetime/SDK support and the payment provider's recovery guarantees before enabling those paths.</li>
+</ul>
+<p>The next commercial milestone is a useful review of anonymized real exceptions, with permission. A larger synthetic world is not a substitute for learning whether the user would trust and adopt the workflow.</p>
+</section>
+<footer>Repository copy: <code>docs/plan.html</code> · Desktop copy: <code>Remit-To Build Plan.html</code>. Both contain the same revised plan. The proposed live integration is specified in <code>CONTRACTS.md</code>; implementation status and commands are in <code>README.md</code>.</footer>
+</main></body></html>
