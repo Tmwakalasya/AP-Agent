@@ -9,8 +9,10 @@ import { createConnection } from "node:net";
 //
 //   npm run demo:up                 reset, seed, start
 //   npm run demo:up -- --no-reset   keep the database as it is; only start the services
+//   npm run demo:up -- --no-runner  leave the runner off so an approval waits for npm run demo:crash
 
 const NO_RESET = process.argv.includes("--no-reset");
+const NO_RUNNER = process.argv.includes("--no-runner");
 const SPACETIME = process.env.SPACETIME_BIN ?? "spacetime";
 // The race and the AP lead's own request happen live, so the agent leaves these ready.
 const LEAVE_READY = "L-2033,L-2029";
@@ -113,7 +115,8 @@ try {
   }
 
   start("provider", process.execPath, [...TSX, "agent/mock-provider.ts"]);
-  start("runner", process.execPath, [...TSX, "agent/runner.ts"]);
+  if (NO_RUNNER) say("demo-up", "--no-runner: approved requests wait for npm run demo:crash or npm run runner");
+  else start("runner", process.execPath, [...TSX, "agent/runner.ts"]);
   start("control", process.execPath, [...TSX, "agent/demo-control.ts"]);
   start("web", process.execPath, ["node_modules/vite/bin/vite.js", "--strictPort", "--clearScreen", "false"]);
   if (!(await waitForPort(5173, 20_000))) throw new Error("the web app did not open :5173 within 20s");
@@ -128,6 +131,7 @@ try {
     "  2 L-2037  agent requested; controller approves; runner settles (simulated)",
     "  3 L-2037 re-bill held (R3); L-2033 race from the controller's demo controls",
     "  4 L-2029  AP lead requests, self-approve refused, agent approve refused, controller approves",
+    ...(NO_RUNNER ? ["crash clip: approve L-2037 on the controller tab, then run npm run demo:crash in another terminal"] : []),
     "ctrl-c stops everything this started",
     "",
   ];

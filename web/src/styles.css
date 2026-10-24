@@ -276,6 +276,8 @@ body.app .board{flex:1;border:0;min-height:0}
 .demo-tools{border:1px dashed #3a3a37;padding:10px 12px 12px;margin-top:18px}
 .demo-tools .b-head{margin-bottom:6px}
 .audit-row .why{display:none}
+.b-btn.will-refuse{border-color:var(--hold);color:var(--hold)}
+.b-btn.will-refuse:hover{background:#1a0f0a}
 
 /* ---------- ?demo: sized for screen recording ---------- */
 body.demo .appbar{height:58px;font-size:14px}

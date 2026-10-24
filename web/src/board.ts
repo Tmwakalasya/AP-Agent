@@ -202,9 +202,9 @@ export class Board {
       request: { requested_by: i.request.requestedBy, amount_cents: Number(i.request.amountCents), status: i.request.state, snapshot_current: true },
     });
     if (!res.allowed) {
-      if (res.reason.includes("own request")) return { can: false, text: `You requested this (${me.id}). A different person must approve it.` };
+      if (res.reason.includes("own request")) return { can: false, text: `You requested this (${me.id}). A different person must approve it. If you try, the database refuses and logs it.` };
       if (res.reason.includes("pending")) return { can: false, text: `Already ${i.request.state}. Nothing left to approve.` };
-      if (res.reason.includes("limit")) return { can: false, text: `${money(i.request.amountCents)} is over your approval limit (${money(me.approvalLimitCents)}).` };
+      if (res.reason.includes("limit")) return { can: false, text: `${money(i.request.amountCents)} is over your approval limit (${money(me.approvalLimitCents)}). If you try, the database refuses and logs it.` };
       return { can: false, text: res.reason };
     }
     return { can: true, text: `You can approve or reject this. Your approval binds ${money(i.request.amountCents)} to ${i.request.payeeId} at bank v${i.request.bankVersion}.` };
@@ -218,6 +218,9 @@ export class Board {
     const hint = this.actHint(i);
     const last = me && i ? lastActionBy(session.conn, session.conn.identity!.toHexString(), r?.id, i.loadId) : undefined;
     const canRequest = !!me && me.role === "ap_lead" && i?.status === "ready" && !this.busy;
+    // The hint predicts; the reducer decides. An approver can still send a
+    // doomed approval on a pending request so the database's refusal is seen.
+    const canTry = !!me && ["ap_lead", "controller"].includes(me.role) && r?.state === "pending" && !this.busy;
     const payee = r ? (r.payeeKind === "factor" ? session.conn.db.factor.id.find(r.payeeId) : session.conn.db.carrier.id.find(r.payeeId)) : undefined;
     const stepIdx = r ? STEPS.findIndex(([s]) => s === r.state) : -1;
     const sideState = r && ["rejected", "failed", "unknown"].includes(r.state) ? r.state : null;
@@ -244,7 +247,7 @@ export class Board {
       ` : ""}
       <div class="hint ${hint.can ? "ok" : ""}">${hint.text}</div>
       ${this.opts.readOnly ? "" : `
-        <button class="b-btn filled ${hint.can && !this.busy ? "" : "disabled"}" data-act="approve" ${hint.can && !this.busy ? "" : "disabled"}>approve</button>
+        <button class="b-btn ${hint.can ? "filled" : "will-refuse"} ${canTry ? "" : "disabled"}" data-act="approve" ${canTry ? "" : "disabled"}>${hint.can || !canTry ? "approve" : "try to approve"}</button>
         <button class="b-btn ${hint.can && !this.busy ? "" : "disabled"}" data-act="reject" ${hint.can && !this.busy ? "" : "disabled"}>reject</button>
         ${canRequest ? `<button class="b-btn" data-act="request">request payment</button>` : ""}
       `}

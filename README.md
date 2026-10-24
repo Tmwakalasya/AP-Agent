@@ -120,7 +120,7 @@ npm run demo:crash   # runner dies after the provider accepts; restart reconcile
 
 | Component | State |
 | --- | --- |
-| Policy core (10 rules, `checkApproval`), 22 offline tests, 36-case scorer | Real. 36/36 exact, 0/24 false holds, 0/12 unsafe requests on synthetic fixtures. |
+| Policy core (8 rules, 13 checks per invoice, `checkApproval`), 22 offline tests, 36-case scorer | Real. 36/36 exact, 0/24 false holds, 0/12 unsafe requests on synthetic fixtures. |
 | SpacetimeDB module: 11 tables, 11 reducers, sender-derived actors | Real, published locally on 2.13. |
 | Refusal-as-committed-event | Verified: return commits the audit row, throw rolls it back. |
 | Live integration test (`agent/live.test.ts`) | 12/12: redirect, duplicate race, self-approve and agent-approve refused, stale approval, runner transitions, crash-after-accept recovery, every refusal attributed to the real sender. |
