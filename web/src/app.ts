@@ -18,7 +18,7 @@ boardEl.addEventListener("remit-to:select", e => retarget((e as CustomEvent<stri
 const connEl = document.getElementById("conn")!;
 const personaEl = document.getElementById("persona")!;
 const paint = () => {
-  connEl.textContent = session.status === "live" ? `● live · ${session.conn.identity?.toHexString().slice(0, 8) ?? ""}` : session.status === "error" ? `offline · ${session.error}` : "connecting…";
+  connEl.textContent = session.status === "live" ? `● live · ${session.conn.identity?.toHexString().slice(0, 8) ?? ""}` : session.status === "error" ? `offline · ${session.error}` : session.error ?? "connecting…";
   const me = myActor(session);
   personaEl.textContent = me ? `${me.persona}` : session.role ? `${session.role} · unbound` : "viewer · read-only";
   personaEl.classList.toggle("hold", !!session.bindRefusal);

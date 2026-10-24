@@ -14,7 +14,7 @@ const PORT = Number(process.env.DEMO_CONTROL_PORT ?? 4311);
 const log = (line: string) => console.log(`${new Date().toISOString().slice(11, 19)} [demo-control] ${line}`);
 
 // Two connections, one agent identity: two workers that picked up the same invoice.
-const dropped = (e?: Error) => { log(`lost the database connection${e ? `: ${e.message}` : ""}; exiting`); process.exit(1); };
+const dropped = (e?: Error) => { log(`lost the database connection${e?.message ? `: ${e.message}` : ""}; exiting`); process.exit(1); };
 const a = await connect("agent", { onDrop: dropped });
 await ensurePersona(a, "agent");
 const b = await connect("agent", { onDrop: dropped });

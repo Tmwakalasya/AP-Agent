@@ -19,6 +19,12 @@ const CHECKS = (["R2", "R3", "R1", "R6", "R7", "R8", "R9", "R10"] as RuleId[]).m
 const extractionFor = (db: Session["conn"]["db"], documentId: string | null | undefined) =>
   documentId ? [...db.extraction.iter()].find(e => e.documentId === documentId) : undefined;
 const STEPS: Array<[string, string]> = [["pending", "requested"], ["approved", "approved"], ["submitting", "claimed"], ["submitted", "submitted"], ["simulated_settled", "settled (mock)"]];
+// Matches agent/demo-up.ts: the load left ready for the duplicate race.
+const RACE_LOAD = "L-2033";
+// A reducer call that never answers (connection lost mid-call) must not
+// leave the buttons disabled for the rest of the take.
+const CALL_TIMEOUT_MS = 15_000;
+const within = <T>(p: Promise<T>) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error("no answer from the database within 15s")), CALL_TIMEOUT_MS))]);
 
 // The demo controls call agent/demo-control.ts (proxied by Vite), which acts
 // as the agent through the same reducers. The board never holds that token.
@@ -72,7 +78,7 @@ export class Board {
     if (session.status !== "live") {
       this.root.innerHTML = session.status === "error"
         ? `<div class="b-empty"><b>Not connected.</b> ${esc(session.error)}<small>Expected SpacetimeDB at <code>${esc(HOST)}</code>, database <code>${esc(DB)}</code>. Start it with <code>spacetime start</code>, then <code>npm run reset</code>.</small></div>`
-        : `<div class="b-empty">connecting to spacetimedb…</div>`;
+        : `<div class="b-empty">${session.error ? esc(session.error) : "connecting to spacetimedb…"}</div>`;
       return;
     }
     const list = items(session.conn);
@@ -85,6 +91,9 @@ export class Board {
     const detailKey = sel ? `${sel.key}:${sel.settlement?.id ?? ""}:${sel.request?.state ?? ""}` : "";
     const animateDetail = detailKey !== this.lastDetailKey;
     this.lastDetailKey = detailKey;
+    // Every table change replaces the markup. A check or email the presenter
+    // opened stays open unless the selected row itself changed.
+    const wasOpen = animateDetail ? null : new Set([...this.root.querySelectorAll<HTMLDetailsElement>("details[data-d]")].filter(d => d.open).map(d => d.dataset.d!));
 
     this.root.innerHTML = `
       <div class="b-col b-left">
@@ -102,6 +111,7 @@ export class Board {
       </div>
       <div class="b-col b-center ${animateDetail ? "anim" : ""}">${sel ? this.detail(sel) : `<div class="b-muted">select a load</div>`}</div>
       ${this.opts.compact ? "" : `<div class="b-col b-right">${this.approvalPanel(sel)}</div>`}`;
+    if (wasOpen) for (const d of this.root.querySelectorAll<HTMLDetailsElement>("details[data-d]")) d.open = wasOpen.has(d.dataset.d!);
   }
 
   private payeeName(kind: string, id: string) {
@@ -152,8 +162,8 @@ export class Board {
       const rs = s.ruleResults.filter(r => r.ruleId === c.id);
       if (rs.length === 0) return "";
       const passed = rs.every(r => r.passed);
-      return `<details class="chip ${passed ? "pass" : "fail"}"><summary><span class="mark">${passed ? "✓" : "✕"}</span>${esc(c.label)}<span class="rid">${c.id}</span></summary><div>${rs.map(r => `<p class="${r.passed ? "" : "warn"}">${esc(r.reason)}</p>`).join("")}</div></details>`;
-    }).sort((a, b) => Number(b.includes('class="chip fail"')) - Number(a.includes('class="chip fail"'))).map((h, n) => h.replace('<details class="chip', `<details style="--i:${n}" class="chip`)).join("") : "";
+      return `<details data-d="${c.id}" class="chip ${passed ? "pass" : "fail"}"><summary><span class="mark">${passed ? "✓" : "✕"}</span>${esc(c.label)}<span class="rid">${c.id}</span></summary><div>${rs.map(r => `<p class="${r.passed ? "" : "warn"}">${esc(r.reason)}</p>`).join("")}</div></details>`;
+    }).sort((a, b) => Number(b.includes('class="chip fail"')) - Number(a.includes('class="chip fail"'))).map((h, n) => h.replace("<details data-d=", `<details style="--i:${n}" data-d=`)).join("") : "";
     return `
       <div class="b-head">
         <span>${esc(i.loadId)} · ${esc(i.carrier?.name ?? i.load.carrierId)} · ${esc(i.load.lane)}</span>
@@ -178,8 +188,8 @@ export class Board {
           <span>${esc(d.id)} · ${shortDate(d.receivedAt)}</span>
         </a>`).join("")}
       </div>
-      ${s?.explanation ? `<details class="prose" open><summary>${s.explanation.startsWith("[template]") ? "Why · template text (Claude unavailable)" : "Why · written by Claude from the policy result"}</summary><p>${esc(s.explanation)}</p></details>` : ""}
-      ${s?.decision === "hold" && s.escalationEmail ? `<details class="prose"><summary>${s.explanation.startsWith("[template]") ? "Escalation email · template" : "Escalation email · drafted by Claude"}</summary><pre>${esc(s.escalationEmail)}</pre></details>` : ""}
+      ${s?.explanation ? `<details data-d="why" class="prose" open><summary>${s.explanation.startsWith("[template]") ? "Why · template text (Claude unavailable)" : "Why · written by Claude from the policy result"}</summary><p>${esc(s.explanation)}</p></details>` : ""}
+      ${s?.decision === "hold" && s.escalationEmail ? `<details data-d="email" class="prose"><summary>${s.explanation.startsWith("[template]") ? "Escalation email · template" : "Escalation email · drafted by Claude"}</summary><pre>${esc(s.escalationEmail)}</pre></details>` : ""}
     `;
   }
 
@@ -266,7 +276,8 @@ export class Board {
   }
 
   private demoControls(i: Item): string {
-    const ready = i.status === "ready" && !!i.invoiceDocId;
+    // The AP lead requests L-2029 live; racing it would consume that beat.
+    const ready = i.status === "ready" && !!i.invoiceDocId && i.loadId === RACE_LOAD;
     const pending = i.request?.state === "pending";
     if (!ready && !pending) return "";
     const off = this.busy ? "disabled" : "";
@@ -292,7 +303,7 @@ export class Board {
     this.busy = true; this.render();
     let notice: Notice | null = null;
     try {
-      switch (t.dataset.act) {
+      await within((async () => { switch (t.dataset.act) {
         case "seed": await reducers.seedWorld({}); break;
         case "approve": if (sel?.request) await reducers.approvePayment({ requestId: sel.request.id, snapshotDigest: sel.request.snapshotDigest }); break;
         case "reject": {
@@ -317,7 +328,7 @@ export class Board {
             ? { kind: x.outcome === "refused" ? "refused" : "ok", title: `database said: agent approve payment → ${x.outcome}`, text: x.reason }
             : { kind: "refused", text: "No decision_log row came back from the agent's approve_payment call." };
         } break;
-      }
+      } })());
     } catch (err) {
       notice = { text: err instanceof DemoControlError ? err.message : `technical failure (transaction aborted): ${String(err)}`, kind: "refused" };
     } finally {

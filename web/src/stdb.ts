@@ -68,36 +68,83 @@ export function connect(persona: PersonaKey): Session {
     onChange: cb => listeners.add(cb),
   };
 
-  const conn = DbConnection.builder()
-    .withUri(HOST)
-    .withDatabaseName(DB)
-    .withToken(localStorage.getItem(key) ?? undefined)
-    .onConnectError((_ctx, err) => { session.status = "error"; session.error = String(err?.message ?? err); notify(); })
-    .onDisconnect((_ctx, err) => { session.status = "error"; session.error = err ? String(err.message) : "disconnected"; notify(); })
-    .onConnect((c, _identity, token) => {
-      localStorage.setItem(key, token);
-      c.subscriptionBuilder()
-        .onApplied(async () => {
-          session.status = "live";
-          await bindPersona(session);
-          notify();
-        })
-        .onError(() => { session.status = "error"; session.error = "subscription failed"; notify(); })
-        .subscribe(TABLES.map(t => `SELECT * FROM ${t}`));
-    })
-    .build();
-  session.conn = conn;
+  // The SDK reconnects an established connection on its own, replays the
+  // subscription and fires onApplied again, which re-binds the persona after
+  // an npm run reset. It gives up on a failed first connection (server not up
+  // yet) and on a token the server will not honour; those two cases are
+  // retried here so a tab recovers without a manual refresh.
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let clearedToken = false;
+  const later = (why: string) => {
+    if (timer) return;
+    attempt += 1;
+    const delay = Math.min(1000 * 2 ** Math.min(attempt - 1, 3), 8000);
+    session.status = "error"; session.error = `${why} · retrying in ${Math.round(delay / 1000)}s`;
+    notify();
+    timer = setTimeout(() => { timer = undefined; dial(); }, delay);
+  };
+  const waiting = (why: string | undefined, delayMs: number | undefined) => {
+    session.status = "connecting";
+    session.error = `${why ?? "disconnected"} · reconnecting${delayMs ? ` in ${Math.round(delayMs / 1000)}s` : ""}`;
+    notify();
+  };
 
-  // Any table change re-renders; the data set is tiny.
   const hook = (table: { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?(cb: () => void): void }) => {
     table.onInsert(notify); table.onDelete(notify); table.onUpdate?.(notify);
   };
-  const db = conn.db as unknown as Record<string, Parameters<typeof hook>[0]>;
-  for (const t of ["actor", "carrier", "factor", "assignment", "load", "document", "extraction",
-    "settlement", "paymentRequest", "approval", "decisionLog"]) hook(db[t]);
+
+  function dial() {
+    const token = localStorage.getItem(key) ?? undefined;
+    session.status = "connecting"; session.error = undefined;
+    const conn = DbConnection.builder()
+      .withUri(HOST)
+      .withDatabaseName(DB)
+      .withToken(token)
+      .withAutomaticReconnect({ minDelayMs: 1000, maxDelayMs: 8000 })
+      .onConnectError((_ctx, err, nextAttempt, delayMs) => {
+        const msg = String(err?.message ?? err);
+        if (nextAttempt !== undefined) { waiting(msg, delayMs); return; }
+        // Terminal for the SDK. A saved token is dropped once: the server may
+        // have been re-keyed, or the identity may no longer be the one it issued.
+        if (token && !clearedToken && !/ECONNREFUSED|Failed to fetch|NetworkError|refused|unreachable/i.test(msg)) {
+          clearedToken = true;
+          localStorage.removeItem(key);
+          dial();
+          return;
+        }
+        later(msg);
+      })
+      .onDisconnect((_ctx, err, nextAttempt, delayMs) => {
+        if (nextAttempt !== undefined) { waiting(err?.message, delayMs); return; }
+        later(err ? String(err.message) : "disconnected");
+      })
+      .onAutomaticReconnect(() => { attempt = 0; session.status = "live"; session.error = undefined; notify(); })
+      .onConnect((c, _identity, tok) => {
+        attempt = 0;
+        localStorage.setItem(key, tok);
+        c.subscriptionBuilder()
+          .onApplied(async () => {
+            session.status = "live"; session.error = undefined; session.bindRefusal = undefined;
+            await bindPersona(session);
+            notify();
+          })
+          .onError(() => later("subscription failed"))
+          .subscribe(TABLES.map(t => `SELECT * FROM ${t}`));
+      })
+      .build();
+    session.conn = conn;
+
+    // Any table change re-renders; the data set is tiny.
+    const db = conn.db as unknown as Record<string, Parameters<typeof hook>[0]>;
+    for (const t of ["actor", "carrier", "factor", "assignment", "load", "document", "extraction",
+      "settlement", "paymentRequest", "approval", "decisionLog"]) hook(db[t]);
+    notify();
+  }
+
+  dial();
   return session;
 }
-
 export function myActor(session: Session) {
   const me = session.conn.identity;
   if (!me) return undefined;

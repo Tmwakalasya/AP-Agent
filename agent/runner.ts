@@ -32,7 +32,7 @@ const unlock = () => { try { if (existsSync(LOCK) && readFileSync(LOCK, "utf8") 
 process.on("exit", unlock);
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { closing = true; unlock(); process.exit(0); });
 
-const runner = await connect("runner", { onDrop: e => { if (closing) return; log(`lost the database connection${e ? `: ${e.message}` : ""}; exiting`); process.exit(1); } });
+const runner = await connect("runner", { onDrop: e => { if (closing) return; log(`lost the database connection${e?.message ? `: ${e.message}` : ""}; exiting`); process.exit(1); } });
 await ensurePersona(runner, "runner");
 log(`online as runner · identity ${runner.identity!.toHexString().slice(0, 8)} · provider ${PROVIDER_URL} (mock, no funds move)${CRASH ? " · WILL CRASH AFTER ACCEPT" : ""}`);
 
