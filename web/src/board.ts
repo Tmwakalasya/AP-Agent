@@ -2,6 +2,7 @@ import type { Session } from "./stdb.ts";
 import { myActor } from "./stdb.ts";
 import { auditFor, documentsFor, items, lastActionBy, money, shortDate, clock, STATUS_LABEL } from "./model.ts";
 import type { Item, Status } from "./model.ts";
+import { checkApproval } from "../../module/rules.ts";
 
 export type BoardOptions = { compact?: boolean; readOnly?: boolean };
 
@@ -10,6 +11,22 @@ const badgeClass = (s: Status) => ({
   hold: "hold", unknown: "hold", failed: "dim", rejected: "dim", awaiting_agent: "dim", ready: "ready",
   pending: "pending", approved: "ok", submitting: "sub", submitted: "sub", simulated_settled: "settled",
 } as Record<Status, string>)[s];
+
+// Human labels for the policy rules. R10 is several sub-checks in rules.ts;
+// the board shows them as one chip and lists the reasons on demand.
+const CHECKS: Array<{ id: string; label: string }> = [
+  { id: "R2", label: "Payee matches verified assignment" },
+  { id: "R3", label: "No existing obligation for this load" },
+  { id: "R1", label: "Amount matches rate confirmation" },
+  { id: "R6", label: "Delivered, POD on file" },
+  { id: "R7", label: "Invoice, load and carrier agree" },
+  { id: "R8", label: "No unresolved bank change" },
+  { id: "R9", label: "Carrier authority active" },
+  { id: "R10", label: "Documents and fields valid" },
+];
+const extractionFor = (db: Session["conn"]["db"], documentId: string | null | undefined) =>
+  documentId ? [...db.extraction.iter()].find(e => e.documentId === documentId) : undefined;
+const STEPS: Array<[string, string]> = [["pending", "requested"], ["approved", "approved"], ["submitting", "claimed"], ["submitted", "submitted"], ["simulated_settled", "settled (mock)"]];
 
 export class Board {
   private selected: string | null = null;
@@ -55,51 +72,94 @@ export class Board {
         ${list.length === 0 ? `<div class="b-muted">no loads yet${this.canSeed() ? " · seed the world →" : ""}</div>` : ""}
         ${list.map(i => `
           <div class="load ${sel?.key === i.key ? "active" : ""} ${this.flashing.has(i.key) ? "flash" : ""}" data-key="${esc(i.key)}">
-            <span class="load-id">${esc(i.loadId)}${i.rebill ? ` <em>re-bill</em>` : ""} <span class="load-carrier">${esc(i.carrier?.name.split(" ")[0] ?? "")}</span></span>
+            <span class="load-id">${esc(i.loadId)}${i.rebill ? ` <em>re-bill</em>` : ""}<small>${esc(i.carrier?.name ?? "")} · ${money(i.load.rateCents)}</small></span>
             <span class="badge ${badgeClass(i.status)}">${esc(STATUS_LABEL[i.status])}</span>
           </div>`).join("")}
-        <div class="b-head audit-head"><span>Audit</span><span>decision_log</span></div>
-        <div class="audit">${auditFor(session.conn, undefined, this.opts.compact ? 6 : 14).map(l => `
-          <div class="audit-row ${l.outcome}"><span class="t">${clock(l.at)}</span> <span class="who">${esc(l.actorId)}</span> ${esc(l.operation)} ${l.loadId ? esc(l.loadId) : ""} → <b>${esc(l.outcome)}</b></div>`).join("")}
+        <div class="b-head audit-head"><span>Audit</span><span>decision_log · live</span></div>
+        <div class="audit">${auditFor(session.conn, undefined, this.opts.compact ? 6 : 12).map(l => `
+          <div class="audit-row ${l.outcome}" title="${esc(l.reason)}"><span class="t">${clock(l.at)}</span> <span class="who">${esc(l.actorId.replace("A-", ""))}</span> ${esc(l.operation.replace(/_/g, " "))} ${l.loadId ? esc(l.loadId) : ""} <b>${esc(l.outcome)}</b></div>`).join("")}
         </div>
       </div>
       <div class="b-col b-center ${animateDetail ? "anim" : ""}">${sel ? this.detail(sel) : `<div class="b-muted">select a load</div>`}</div>
       ${this.opts.compact ? "" : `<div class="b-col b-right">${this.approvalPanel(sel)}</div>`}`;
   }
 
+  private payeeName(kind: string, id: string) {
+    const db = this.session.conn.db;
+    const row = kind === "factor" ? db.factor.id.find(id) : db.carrier.id.find(id);
+    return row ? `${row.name} <small>(${kind})</small>` : `${esc(id)} <small>(${esc(kind)})</small>`;
+  }
+
+  private banner(i: Item): string {
+    const s = i.settlement; const r = i.request;
+    const failed = s?.ruleResults.filter(x => !x.passed) ?? [];
+    const amount = money(s?.agreedCents ?? i.load.rateCents);
+    const payee = s?.payeeKind ? this.payeeName(s.payeeKind, s.payeeId) : "undecidable";
+    const approvedBy = r ? [...this.session.conn.db.approval.iter()].filter(a => a.requestId === r.id).at(-1)?.approverId : undefined;
+    let head = "", sub = "";
+    switch (i.status) {
+      case "awaiting_agent": head = "Awaiting agent"; sub = "The agent has not read this invoice yet."; break;
+      case "hold": {
+        head = "Hold. Pay nobody yet.";
+        if (failed.some(f => f.ruleId === "R2") && s) {
+          const ex = extractionFor(this.session.conn.db, i.invoiceDocId);
+          sub = `The verified assignment says pay <b>${payee}</b>. This invoice says pay <b class="warn">${ex ? this.payeeName(ex.remitToKind, ex.remitToId) : "someone else"}</b>. An unverified instruction cannot replace a verified one.`;
+        } else if (failed.some(f => f.ruleId === "R3")) {
+          const other = [...this.session.conn.db.paymentRequest.iter()].find(x => x.loadId === i.loadId);
+          sub = `This load already has an obligation${other ? ` (request #${other.id}, ${esc(other.invoiceKey.split("|")[1])}, ${esc(other.state)})` : ""}. This invoice bills it again under a new number.`;
+        } else sub = `${failed.length} check${failed.length > 1 ? "s" : ""} failed: ${failed.map(f => CHECKS.find(c => c.id === f.ruleId)?.label ?? f.ruleId).join("; ")}.`;
+        break;
+      }
+      case "ready": head = `Ready. ${amount} to ${payee}.`; sub = "All checks passed. Waiting for the agent or AP lead to request payment."; break;
+      case "pending": head = `Pending approval. ${amount} to ${payee}.`; sub = `Requested by <b>${esc(r?.requestedBy)}</b>. Needs approval from a different person.`; break;
+      case "approved": head = `Approved. ${amount} to ${payee}.`; sub = `Approved by <b>${esc(approvedBy)}</b>, not the requester. Waiting for the payment runner.`; break;
+      case "rejected": head = `Rejected.`; sub = `${esc(approvedBy)} rejected this request. The load stays reserved until a controller reconciles it.`; break;
+      case "submitting": head = `Submitting. ${amount} to ${payee}.`; sub = `Runner claimed the request. Idempotency key and payload are frozen.`; break;
+      case "submitted": head = `Submitted. ${amount} to ${payee}.`; sub = `The mock provider accepted the transfer. Submitted is not settled.`; break;
+      case "unknown": head = `Unknown.`; sub = `The provider did not answer. The obligation stays reserved; nobody pays again until the stored key is reconciled.`; break;
+      case "failed": head = `Failed.`; sub = `The provider refused the transfer. Still reserved until a controller reconciles.`; break;
+      case "simulated_settled": head = `Settled (simulated). ${amount} to ${payee}.`; sub = `Terminal success from the in-process mock provider. No real funds moved.`; break;
+    }
+    return `<div class="banner ${badgeClass(i.status)}"><div class="banner-head"><span class="badge ${badgeClass(i.status)}">${esc(STATUS_LABEL[i.status])}</span><h3>${head}</h3></div><p>${sub}</p></div>`;
+  }
+
   private detail(i: Item): string {
     const { conn } = this.session;
     const s = i.settlement;
     const docs = documentsFor(conn, i);
-    const failed = s?.ruleResults.filter(r => !r.passed) ?? [];
-    const extraction = i.invoiceDocId ? conn.db.extraction.documentId.find(i.invoiceDocId) : undefined;
+    const extraction = extractionFor(conn.db, i.invoiceDocId);
+    const chips = s ? CHECKS.map(c => {
+      const rs = s.ruleResults.filter(r => r.ruleId === c.id);
+      if (rs.length === 0) return "";
+      const passed = rs.every(r => r.passed);
+      return `<details class="chip ${passed ? "pass" : "fail"}"><summary><span class="mark">${passed ? "✓" : "✕"}</span>${esc(c.label)}<span class="rid">${c.id}</span></summary><div>${rs.map(r => `<p class="${r.passed ? "" : "warn"}">${esc(r.reason)}</p>`).join("")}</div></details>`;
+    }).sort((a, b) => Number(b.includes('class="chip fail"')) - Number(a.includes('class="chip fail"'))).map((h, n) => h.replace('<details class="chip', `<details style="--i:${n}" class="chip`)).join("") : "";
     return `
       <div class="b-head">
-        <span>${esc(i.loadId)} · ${esc(i.carrier?.name ?? i.load.carrierId)} · ${money(i.load.rateCents)}</span>
-        <span class="badge ${badgeClass(i.status)}">${esc(STATUS_LABEL[i.status])}${failed.length ? ` · ${failed.map(r => r.ruleId).join(" ")}` : ""}</span>
+        <span>${esc(i.loadId)} · ${esc(i.carrier?.name ?? i.load.carrierId)} · ${esc(i.load.lane)}</span>
+        <span>${esc(i.load.customer)} · delivered ${i.load.deliveredAt ? shortDate(i.load.deliveredAt) : "—"}</span>
       </div>
-      <div class="lane">${esc(i.load.lane)} · ${esc(i.load.customer)} · delivered ${i.load.deliveredAt ? shortDate(i.load.deliveredAt) : "—"}</div>
+      ${this.banner(i)}
+      ${s ? `
+        <div class="compare">
+          <div><i>Policy says pay</i><b>${s.payeeKind ? this.payeeName(s.payeeKind, s.payeeId) : "undecidable"}</b><small>from the verified carrier file and assignments</small></div>
+          <div class="${extraction && s.payeeKind && (extraction.remitToKind !== s.payeeKind || extraction.remitToId !== s.payeeId) ? "mismatch" : ""}"><i>Invoice says pay</i><b>${extraction ? this.payeeName(extraction.remitToKind, extraction.remitToId) : "—"}</b><small>read by ${esc(extraction?.method ?? "—")} extraction · confidence ${extraction?.confidence ?? "—"}</small></div>
+          <div><i>Amount</i><b>${money(s.agreedCents)}</b><small>agreed rate; invoice ${extraction ? money(extraction.totalCents) : "—"}</small></div>
+        </div>
+        <div class="b-head sub-head"><span>Checks</span><span>${s.ruleResults.filter(r => r.passed).length}/${s.ruleResults.length} rules passed · click a check for the rule text</span></div>
+        <div class="chips">${chips}</div>
+      ` : ""}
+      <div class="b-head sub-head"><span>Evidence</span><span>${s ? `${s.evidenceIds.length} cited` : ""} · click to open</span></div>
       <div class="docs">${docs.map((d, n) => `
         <a class="doc ${d.kind} ${s?.evidenceIds.includes(d.id) ? "cited" : ""}" style="--i:${n}" ${d.path ? `href="/${esc(d.path)}" target="_blank" rel="noopener"` : ""} title="${esc(d.title)}">
           <img src="/docs/${esc(d.id)}.png" alt="" onerror="this.remove()">
+          ${s?.evidenceIds.includes(d.id) ? `<em>cited</em>` : d.kind === "email" ? `<em class="warn">unverified</em>` : ""}
           <b>${esc(d.kind.replace("_", " "))}</b>
-          <span>${esc(d.id)}<br>${shortDate(d.receivedAt)} · ${esc(d.sender.split("@")[1] ?? d.sender)}</span>
+          <span>${esc(d.id)} · ${shortDate(d.receivedAt)}</span>
         </a>`).join("")}
       </div>
-      ${s ? `
-        <div class="rules">${s.ruleResults.map((r, n) => `
-          <div class="rule ${r.passed ? "pass" : "fail"}" style="--i:${n}"><span class="mark">${r.passed ? "✓" : "✕"}</span><span class="rid">${esc(r.ruleId)}</span><span>${esc(r.reason)}</span></div>`).join("")}
-        </div>
-        <div class="kv-strip">
-          <span><i>policy payee</i> ${s.payeeKind ? `${esc(s.payeeKind)} ${esc(s.payeeId)}` : "undecidable"}</span>
-          <span><i>requested</i> ${extraction ? `${esc(extraction.remitToKind)} ${esc(extraction.remitToId)}` : "—"}</span>
-          <span><i>agreed</i> ${money(s.agreedCents)}</span>
-          <span><i>evidence</i> ${s.evidenceIds.map(esc).join(" · ")}</span>
-          <span><i>snapshot</i> ${esc(s.snapshotDigest.slice(0, 8))}</span>
-        </div>
-        ${s.explanation ? `<div class="explain"><b>Claude · explanation${extraction ? ` · ${esc(extraction.method)} extraction · confidence ${extraction.confidence}` : ""}</b>${esc(s.explanation)}</div>` : ""}
-        ${s.decision === "hold" && s.escalationEmail ? `<div class="explain email"><b>Claude · drafted escalation</b><pre>${esc(s.escalationEmail)}</pre></div>` : ""}
-      ` : `<div class="b-muted">${i.status === "awaiting_agent" ? "the agent has not read this invoice yet" : ""}</div>`}
+      ${s?.explanation ? `<details class="prose" open><summary>Claude · why</summary><p>${esc(s.explanation)}</p></details>` : ""}
+      ${s?.decision === "hold" && s.escalationEmail ? `<details class="prose"><summary>Claude · drafted escalation email</summary><pre>${esc(s.escalationEmail)}</pre></details>` : ""}
     `;
   }
 
@@ -108,44 +168,69 @@ export class Board {
     return !!me && ["controller", "world"].includes(me.role) && [...this.session.conn.db.load.iter()].length === 0;
   }
 
+  // Mirrors the reducer's checkApproval so the panel can say why in advance.
+  // The reducer is still the authority; this only drives the hint text.
+  private actHint(i: Item | undefined): { can: boolean; text: string } {
+    const me = myActor(this.session);
+    if (!me) return { can: false, text: this.session.role ? `The ${this.session.role.replace("_", " ")} persona is already bound to another browser or identity. Each persona binds once per database; run npm run reset to free it.` : "Viewer. Read-only." };
+    if (me.role === "agent") return { can: false, text: "The agent identity cannot approve anything." };
+    if (me.role === "runner" || me.role === "world") return { can: false, text: `The ${me.role} identity cannot approve payments.` };
+    if (!i) return { can: false, text: "Select a load." };
+    if (!i.request) return { can: false, text: i.status === "hold" ? "No request exists. The reducer refused to create one; the failed check is in the audit log." : i.status === "ready" ? "Policy passed. Nothing to approve until a request exists." : "Nothing to approve." };
+    const res = checkApproval({
+      actor: { id: me.id, role: me.role as "ap_lead" | "controller", approval_limit_cents: Number(me.approvalLimitCents) },
+      request: { requested_by: i.request.requestedBy, amount_cents: Number(i.request.amountCents), status: i.request.state, snapshot_current: true },
+    });
+    if (!res.allowed) {
+      if (res.reason.includes("own request")) return { can: false, text: `You requested this (${me.id}). A different person must approve it.` };
+      if (res.reason.includes("pending")) return { can: false, text: `Already ${i.request.state}. Nothing left to approve.` };
+      if (res.reason.includes("limit")) return { can: false, text: `${money(i.request.amountCents)} is over your approval limit (${money(me.approvalLimitCents)}).` };
+      return { can: false, text: res.reason };
+    }
+    return { can: true, text: `You can approve or reject this. Your approval binds ${money(i.request.amountCents)} to ${i.request.payeeId} at bank v${i.request.bankVersion}.` };
+  }
+
   private approvalPanel(i: Item | undefined): string {
     const { session } = this;
     const me = myActor(session);
-    const who = me ? `${esc(me.persona)}` : session.role ? `unbound ${esc(session.role)}` : "viewer · read-only";
+    const who = me ? esc(me.persona) : session.role ? `unbound ${esc(session.role)}` : "viewer · read-only";
     const r = i?.request;
+    const hint = this.actHint(i);
     const last = me && i ? lastActionBy(session.conn, session.conn.identity!.toHexString(), r?.id, i.loadId) : undefined;
-    const canApprove = !!me && ["ap_lead", "controller"].includes(me.role) && r?.state === "pending" && !this.busy;
     const canRequest = !!me && me.role === "ap_lead" && i?.status === "ready" && !this.busy;
     const payee = r ? (r.payeeKind === "factor" ? session.conn.db.factor.id.find(r.payeeId) : session.conn.db.carrier.id.find(r.payeeId)) : undefined;
+    const stepIdx = r ? STEPS.findIndex(([s]) => s === r.state) : -1;
+    const sideState = r && ["rejected", "failed", "unknown"].includes(r.state) ? r.state : null;
     return `
-      <div class="b-head"><span>Approval</span><span class="badge pending">you: ${who}</span></div>
-      ${session.bindRefusal ? `<div class="refusal">${esc(session.bindRefusal)}</div>` : ""}
+      <div class="b-head"><span>You</span><span class="badge pending">${who}</span></div>
+      ${session.bindRefusal ? `<div class="refusal refused">${esc(session.bindRefusal)}</div>` : ""}
       ${this.canSeed() ? `<button class="b-btn filled" data-act="seed">seed world</button>` : ""}
       ${r ? `
-        <div class="kv"><span>request</span><span>#${r.id}</span></div>
+        <div class="steps">${STEPS.map(([s, label], n) => `<div class="step ${n < stepIdx ? "done" : n === stepIdx ? "now" : ""}"><span class="pt"></span><span>${label}</span></div>`).join("")}
+          ${sideState ? `<div class="step side now"><span class="pt"></span><span>${esc(sideState)}${sideState === "unknown" ? " · still reserved" : ""}</span></div>` : ""}
+        </div>
+        <div class="kv"><span>request</span><span>#${r.id} · by ${esc(r.requestedBy)}</span></div>
         <div class="kv"><span>amount</span><span>${money(r.amountCents)} ${esc(r.currency)}</span></div>
-        <div class="kv"><span>payee</span><span>${esc(r.payeeId)} ${esc(payee?.name ?? "")}</span></div>
-        <div class="kv"><span>bank</span><span>v${r.bankVersion} · ${esc(payee?.bankLabel ?? "")}</span></div>
-        <div class="kv"><span>requested by</span><span>${esc(r.requestedBy)}</span></div>
-        <div class="kv"><span>state</span><span class="badge ${badgeClass(r.state as Status)}">${esc(STATUS_LABEL[r.state as Status] ?? r.state)}</span></div>
-        <div class="kv"><span>snapshot</span><span>${esc(r.snapshotDigest.slice(0, 8))}…</span></div>
+        <div class="kv"><span>payee</span><span>${esc(payee?.name ?? r.payeeId)}</span></div>
+        <div class="kv"><span>bank destination</span><span>v${r.bankVersion} · ${esc(payee?.bankLabel ?? "")}</span></div>
+        <div class="kv"><span>snapshot</span><span title="${esc(r.snapshotDigest)}">${esc(r.snapshotDigest.slice(0, 8))}…</span></div>
         ${r.idempotencyKey ? `<div class="kv"><span>idempotency key</span><span>${esc(r.idempotencyKey)}</span></div>` : ""}
         ${r.transferId ? `<div class="kv"><span>mock transfer</span><span>${esc(r.transferId)}</span></div>` : ""}
         ${r.lastOutcome ? `<div class="kv"><span>last outcome</span><span>${esc(r.lastOutcome)}</span></div>` : ""}
       ` : i ? `
         <div class="kv"><span>amount</span><span>${money(i.load.rateCents)} USD</span></div>
-        <div class="kv"><span>policy payee</span><span>${i.settlement?.payeeKind ? `${esc(i.settlement.payeeKind)} ${esc(i.settlement.payeeId)}` : "—"}</span></div>
+        <div class="kv"><span>policy payee</span><span>${i.settlement?.payeeKind ? `${esc(i.settlement.payeeId)}` : "—"}</span></div>
         <div class="kv"><span>request</span><span>none</span></div>
       ` : ""}
+      <div class="hint ${hint.can ? "ok" : ""}">${hint.text}</div>
       ${this.opts.readOnly ? "" : `
-        <button class="b-btn filled ${canApprove ? "" : "disabled"}" data-act="approve" ${canApprove ? "" : "disabled"}>approve</button>
-        <button class="b-btn ${canApprove ? "" : "disabled"}" data-act="reject" ${canApprove ? "" : "disabled"}>reject</button>
+        <button class="b-btn filled ${hint.can && !this.busy ? "" : "disabled"}" data-act="approve" ${hint.can && !this.busy ? "" : "disabled"}>approve</button>
+        <button class="b-btn ${hint.can && !this.busy ? "" : "disabled"}" data-act="reject" ${hint.can && !this.busy ? "" : "disabled"}>reject</button>
         ${canRequest ? `<button class="b-btn" data-act="request">request payment</button>` : ""}
       `}
       ${this.notice ? `<div class="refusal ${this.notice.kind}">${esc(this.notice.text)}</div>` :
-        last ? `<div class="refusal ${last.outcome === "refused" ? "refused" : "ok"}"><b>${esc(last.operation)} → ${esc(last.outcome)}</b><br>${esc(last.reason)}</div>` :
-        i && !r ? `<div class="refusal dim">${i.status === "hold" ? "No executable request. The agent did not create a payment request; the failed rule is committed to decision_log." : i.status === "ready" ? "Policy passed. Waiting for the agent or AP lead to request payment." : "Nothing to approve yet."}</div>` : ""}
-      ${me?.role === "controller" && i ? `<div class="tools"><span class="b-head"><span>Controller tools</span></span><button class="b-btn small" data-act="bank">change ${esc(i.load.carrierId)} bank destination</button></div>` : ""}
+        last ? `<div class="refusal ${last.outcome === "refused" ? "refused" : "ok"}"><b>database said: ${esc(last.operation.replace(/_/g, " "))} → ${esc(last.outcome)}</b>${esc(last.reason)}</div>` : ""}
+      ${me?.role === "controller" && i ? `<div class="tools"><div class="b-head"><span>Controller tools</span></div><button class="b-btn small" data-act="bank">change ${esc(i.load.carrierId)} bank destination</button><div class="b-muted small">Bumps the bank version. Any approval bound to the old version goes stale and cannot dispatch.</div></div>` : ""}
     `;
   }
 
@@ -160,7 +245,7 @@ export class Board {
     this.busy = true; this.render();
     try {
       switch (t.dataset.act) {
-        case "seed": await reducers.seedWorld(); break;
+        case "seed": await reducers.seedWorld({}); break;
         case "approve": if (sel?.request) await reducers.approvePayment({ requestId: sel.request.id, snapshotDigest: sel.request.snapshotDigest }); break;
         case "reject": {
           const reason = prompt("Reason for rejection:") ?? "";
