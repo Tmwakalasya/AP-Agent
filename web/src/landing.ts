@@ -21,10 +21,6 @@ document.querySelectorAll<HTMLElement>("#headline .line").forEach((el, i) => {
   }, 250 + i * 450);
 });
 
-document.getElementById("copy")?.addEventListener("click", () => {
-  navigator.clipboard?.writeText("remit-to evaluate L-2041");
-  const b = document.getElementById("copy")!; b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200);
-});
 
 // Scroll reveal.
 const io = new IntersectionObserver(entries => {

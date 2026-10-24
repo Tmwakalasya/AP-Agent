@@ -21,14 +21,7 @@
   <h1 id="headline" aria-label="Pay the right party. Prove it."><span class="line" data-text="PAY THE RIGHT PARTY."></span><span class="line" data-text="PROVE IT."></span></h1>
   <p class="subline rise">The agent reads &nbsp;·&nbsp; The policy decides &nbsp;·&nbsp; The database enforces</p>
   <p class="lede rise">Remit-To is an autonomous accounts-payable agent for freight brokers. It matches invoices to proof, catches duplicates and payment redirects, and holds anything it cannot prove.</p>
-  <div class="ctas rise"><a class="btn" href="/app/?persona=controller">Open live board →</a><a class="btn outline" href="#demo">Watch the 2-min demo</a></div>
-
-  <div class="cmd rise"><pre id="cmd-out"><span class="prompt">&gt;</span> remit-to evaluate L-2041
-  decision    <span class="hold">HOLD</span>
-  payee       factor F-01 · Meridian Capital        (policy)
-  requested   carrier C-301 · Ridgeline Transport   (June invoice)
-  failed      R2  verified assignment selects F-01; invoice or email instructions cannot change it
-  evidence    D-noa-0302 · D-inv-0612 · D-rate-2041 · D-pod-2041</pre><button id="copy" title="Copy">copy</button></div>
+  <div class="ctas rise"><a class="btn" href="/app/?persona=controller">Open live board →</a><a class="btn outline" href="#stories">Three stories</a></div>
 
   <div class="panel-frame rise" id="board">
     <div class="tag"><span class="dot" id="live-dot"></span> <span id="live-label">live · read-only · spacetimedb subscription</span></div>
@@ -40,10 +33,15 @@
   </div></div>
 </div></header>
 
+<section id="claim"><div class="wrap">
+  <p class="claim reveal">The model never decides who gets paid.</p>
+  <p class="claim-sub reveal">Claude reads and explains. <code class="mono">rules.ts</code> decides. SpacetimeDB enforces who may approve. When a document disagrees with a verified record, the document loses.</p>
+</div></section>
+
 <section id="how"><div class="wrap">
   <div class="marker reveal">How it works</div>
   <h2 class="reveal">One policy. Two call sites. Zero trust in prose.</h2>
-  <p class="sub reveal">The model never decides who gets paid. It produces typed fields and an explanation. The same <code class="mono">rules.ts</code> runs in the agent to explain, and inside the reducer transaction to decide.</p>
+  <p class="sub reveal">The model produces typed fields and an explanation, nothing more. The same <code class="mono">rules.ts</code> runs in the agent to explain, and inside the reducer transaction to decide.</p>
   <div class="cols3 reveal">
     <div><div class="num">01</div><h3>Read</h3><p>Claude reads the rendered invoice, rate confirmation, POD, NOA and emails. It returns typed fields with a confidence score and a plain-language explanation. It cannot touch assignments, bank records or approvals.</p></div>
     <div><div class="num">02</div><h3>Decide</h3><p>Ten deterministic rules in <code>rules.ts</code> select the amount from the rate con and the payee from verified assignments. Any failed rule is a hold with the rule id, reason and evidence ids attached.</p></div>
@@ -83,6 +81,21 @@
   </div>
 </div></section>
 
+<section id="lifecycle"><div class="wrap">
+  <div class="marker reveal">Payment lifecycle</div>
+  <h2 class="reveal">Submitted is not settled.</h2>
+  <div class="life reveal">
+    <pre>pending ──▶ approved ──▶ submitting ──▶ submitted ──▶ simulated_settled
+   │            │              │              │
+rejected     pending*       <span class="hold">unknown</span>         failed
+                               │
+                      submitted / failed
+
+pending*  prior approval invalidated when the snapshot changes
+<span class="hold">unknown</span>   obligation stays reserved; reconcile the stored key</pre>
+    <div class="quote">Unknown is not failed.<br>Unknown is not permission to pay again.<small>A timeout after a possible send never creates a new payment identity. The runner restarts, finds its stored idempotency key, and reconciles to one transfer.</small></div>
+  </div>
+</div></section>
 <section id="evidence"><div class="wrap">
   <div class="marker reveal">Evidence</div>
   <h2 class="reveal">Measured on what we actually tested.</h2>
@@ -100,21 +113,6 @@
   <p class="note reveal">No money moved. No real dollars saved are claimed. Extraction errors are reported separately from policy errors.</p>
 </div></section>
 
-<section id="lifecycle"><div class="wrap">
-  <div class="marker reveal">Payment lifecycle</div>
-  <h2 class="reveal">Submitted is not settled.</h2>
-  <div class="life reveal">
-    <pre>pending ──▶ approved ──▶ submitting ──▶ submitted ──▶ simulated_settled
-   │            │              │              │
-rejected     pending*       <span class="hold">unknown</span>         failed
-                               │
-                      submitted / failed
-
-pending*  prior approval invalidated when the snapshot changes
-<span class="hold">unknown</span>   obligation stays reserved; reconcile the stored key</pre>
-    <div class="quote">Unknown is not failed.<br>Unknown is not permission to pay again.<small>A timeout after a possible send never creates a new payment identity. The runner restarts, finds its stored idempotency key, and reconciles to one transfer.</small></div>
-  </div>
-</div></section>
 
 <footer><div class="wrap"><span>⟂ Remit-To</span><span>Built solo at Cal Hacks 13.0 · Oct 2026</span><span>No funds move</span></div></footer>
 <script type="module" src="/src/landing.ts"></script>
