@@ -44,7 +44,7 @@
   <p class="sub reveal">The model produces typed fields and an explanation, nothing more. The same <code class="mono">rules.ts</code> runs in the agent to explain, and inside the reducer transaction to decide.</p>
   <div class="cols3 reveal">
     <div><div class="num">01</div><h3>Read</h3><p>Claude reads the rendered invoice, rate confirmation, POD, NOA and emails. It returns typed fields with a confidence score and a plain-language explanation. It cannot touch assignments, bank records or approvals.</p></div>
-    <div><div class="num">02</div><h3>Decide</h3><p>Ten deterministic rules in <code>rules.ts</code> select the amount from the rate con and the payee from verified assignments. Any failed rule is a hold with the rule id, reason and evidence ids attached.</p></div>
+    <div><div class="num">02</div><h3>Decide</h3><p>Eight deterministic rule families (thirteen checks) in <code>rules.ts</code> select the amount from the rate con and the payee from verified assignments. Any failed rule is a hold with the rule id, reason and evidence ids attached.</p></div>
     <div><div class="num">03</div><h3>Enforce</h3><p>SpacetimeDB reducers re-run the policy on trusted rows, reserve the load and invoice key atomically, and derive the actor from the connection identity. The agent identity cannot approve. Refusals commit to the audit log.</p></div>
   </div>
 </div></section>

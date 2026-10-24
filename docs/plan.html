@@ -89,7 +89,9 @@ footer { border-top:1px solid var(--line); margin-top:48px; padding-top:20px; co
 <thead><tr><th>Reducer</th><th>Caller</th><th>Behavior</th></tr></thead>
 <tbody>
 <tr><td><code>bootstrap_persona(role)</code></td><td>any unbound identity</td><td>First-claim binding of <code>ctx.sender</code> to a seeded persona; refuse if sender bound or persona taken. Demo convenience, still sender-derived.</td></tr>
-<tr><td><code>seed_world</code></td><td>first bound controller</td><td>3 stories + 2 filler clean loads, March NOA assignment, all documents.</td></tr>
+<tr><td><code>seed_world</code></td><td>controller, world</td><td>3 stories + 2 filler clean loads, March NOA assignment, all documents. Idempotent.</td></tr>
+<tr><td><code>attach_document_file</code></td><td>controller, world</td><td>Records a seeded document's content hash and rendered path once; a different hash is refused.</td></tr>
+<tr><td><code>update_carrier_bank</code></td><td>controller</td><td>Bumps the verified bank destination version; undispatched requests to that carrier return to pending and are re-bound.</td></tr>
 <tr><td><code>record_extraction</code></td><td>agent</td><td>Typed fields for an existing document hash. Cannot touch assignments.</td></tr>
 <tr><td><code>propose_settlement</code></td><td>agent</td><td>Re-runs <code>evaluateSettlement</code> on trusted rows; writes <code>settlement</code> + <code>decision_log</code>.</td></tr>
 <tr><td><code>request_payment</code></td><td>agent, ap_lead</td><td>Re-check policy; atomic load reservation + carrier/invoice key via unique indexes; a refusal commits a <code>decision_log</code> row with no business mutation.</td></tr>
@@ -121,7 +123,7 @@ footer { border-top:1px solid var(--line); margin-top:48px; padding-top:20px; co
 
 <section id="web"><h2>6. Web app: landing (<code>/</code>) + board (<code>/app</code>), one Vite project</h2>
 <p><strong>Design tokens (from factory.ai, measured):</strong> background <code>#F5F5F5</code>, ink <code>#020202</code>, hairline <code>#E4E4E0</code>, single accent <span class="hold">#EF6F2E</span> used only for <code>HOLD</code>. Geist (headlines, 500, −0.04em, uppercase hero) and Geist Mono (labels, buttons, metadata, uppercase). Zero border radius. Flat black buttons with mono white text; outline variant. Grid-texture bordered hero panel. Mono section markers (<code>● HOW IT WORKS</code>). Numbered <code>01/02/03</code>.</p>
-<p><strong>Landing, top to bottom:</strong> nav · hero with scramble-decode into <strong>PAY THE RIGHT PARTY. / PROVE IT.</strong>, mono subline, one-sentence lede, CTAs, <code>&gt; remit-to evaluate L-2041</code> command line with a real seeded decision · live read-only Spacetime board embed in the grid panel · stack strip · HOW IT WORKS 01/02/03 · THREE STORIES cards · EVIDENCE (36/36, 0/24, 0/12; REAL / SIMULATED / NOT BUILT) · PAYMENT LIFECYCLE ("unknown is not failed. unknown is not permission to pay again.") · footer.</p>
+<p><strong>Landing, top to bottom:</strong> nav · hero with scramble-decode into <strong>PAY THE RIGHT PARTY. / PROVE IT.</strong>, mono subline, one-sentence lede, CTAs · live read-only Spacetime board embed in the grid panel · stack strip · HOW IT WORKS 01/02/03 · THREE STORIES cards · EVIDENCE (36/36, 0/24, 0/12; REAL / SIMULATED / NOT BUILT) · PAYMENT LIFECYCLE ("unknown is not failed. unknown is not permission to pay again.") · footer.</p>
 <p><strong>Board (<code>/app</code>):</strong> left load board with live badges; center load detail (document thumbnails, rule results with reasons, evidence ids, Claude explanation and drafted escalation email); right approval panel with persona badge, approve/reject, inline refusal reasons; persona indicator top; small scorer footer.</p>
 <p class="muted">Static mockup: <code>web/mockup/index.html</code>.</p>
 </section>
@@ -165,7 +167,7 @@ footer { border-top:1px solid var(--line); margin-top:48px; padding-top:20px; co
 <div class="table-wrap"><table>
 <thead><tr><th>Real</th><th>Simulated</th><th>Not built</th></tr></thead>
 <tbody><tr>
-<td>Deterministic policy, 10 rules, 22 tests · SpacetimeDB tables, reducers, live subscriptions · sender-derived identity and separation of duties · atomic load + invoice reservation · Claude extraction and explanation · idempotency key persisted before dispatch · crash-after-accept recovery test</td>
+<td>Deterministic policy, 8 rule families (13 checks), 22 tests · SpacetimeDB tables, reducers, live subscriptions · sender-derived identity and separation of duties · atomic load + invoice reservation · Claude extraction and explanation · idempotency key persisted before dispatch · crash-after-accept recovery test</td>
 <td>Payment provider (in-process mock, labeled) · <code>simulated_settled</code> · carrier authority (seeded) · bank-change callback verification · demo personas (first-claim, still sender-bound)</td>
 <td>Real bank rails or TriumphPay · accessorials, detention, lumper · release processing, conflicting assignments · general ledger · live authority lookup · policy learning</td>
 </tr></tbody></table></div>
