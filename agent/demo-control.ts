@@ -14,9 +14,11 @@ const PORT = Number(process.env.DEMO_CONTROL_PORT ?? 4311);
 const log = (line: string) => console.log(`${new Date().toISOString().slice(11, 19)} [demo-control] ${line}`);
 
 // Two connections, one agent identity: two workers that picked up the same invoice.
-const a = await connect("agent");
+const dropped = (e?: Error) => { log(`lost the database connection${e ? `: ${e.message}` : ""}; exiting`); process.exit(1); };
+const a = await connect("agent", { onDrop: dropped });
 await ensurePersona(a, "agent");
-const b = await connect("agent");
+const b = await connect("agent", { onDrop: dropped });
+let busy = false;
 const me = a.identity!;
 
 type LogRow = ReturnType<typeof a.db.decisionLog.iter> extends Iterable<infer R> ? R : never;
@@ -68,6 +70,8 @@ createServer(async (req, res) => {
   try {
     if (req.method === "GET" && path === "") return send(res, 200, { identity: me.toHexString().slice(0, 8) });
     if (req.method !== "POST") return send(res, 405, { error: "POST only" });
+    if (busy) return send(res, 409, { error: "another demo action is still in flight" });
+    busy = true;
     if (path === "/race") {
       const load = url.searchParams.get("load"), doc = url.searchParams.get("doc");
       if (!load || !doc) return send(res, 400, { error: "race needs ?load= and ?doc=" });
@@ -83,5 +87,7 @@ createServer(async (req, res) => {
   } catch (e) {
     log(`failed: ${String(e)}`);
     send(res, 500, { error: String(e) });
+  } finally {
+    busy = false;
   }
 }).listen(PORT, "127.0.0.1", () => log(`listening on http://127.0.0.1:${PORT} as agent · identity ${me.toHexString().slice(0, 8)} · demo only`));

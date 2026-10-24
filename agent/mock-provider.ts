@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -28,8 +28,16 @@ export function startMockProvider(opts: ProviderOptions = {}): Promise<Provider>
   const settleAfter = opts.settleAfterMs ?? 4000;
   const stateFile = opts.stateFile === undefined ? resolve("agent/.cache/mock-provider.json") : opts.stateFile;
   const byKey = new Map<string, Transfer>();
-  if (stateFile && existsSync(stateFile)) for (const t of JSON.parse(readFileSync(stateFile, "utf8")) as Transfer[]) byKey.set(t.idempotency_key, t);
-  const persist = () => { if (!stateFile) return; mkdirSync(dirname(stateFile), { recursive: true }); writeFileSync(stateFile, JSON.stringify([...byKey.values()], null, 2)); };
+  if (stateFile && existsSync(stateFile)) {
+    try { for (const t of JSON.parse(readFileSync(stateFile, "utf8")) as Transfer[]) byKey.set(t.idempotency_key, t); }
+    catch (e) { console.log(`[mock-provider] ignoring unreadable state file ${stateFile}: ${String(e)}`); }
+  }
+  const persist = () => {
+    if (!stateFile) return;
+    mkdirSync(dirname(stateFile), { recursive: true });
+    writeFileSync(`${stateFile}.tmp`, JSON.stringify([...byKey.values()], null, 2));
+    renameSync(`${stateFile}.tmp`, stateFile);
+  };
   const chaos = { dropResponseOnce: false };
 
   // Settlement is lazy: a transfer reads as settled once it is old enough.
@@ -55,7 +63,8 @@ export function startMockProvider(opts: ProviderOptions = {}): Promise<Provider>
       return t ? send(res, 200, view(t)) : send(res, 404, { error: "unknown transfer" });
     }
     if (req.method === "POST" && path === "/v1/chaos") {
-      const b = JSON.parse(await readBody(req) || "{}") as { drop_response_once?: boolean };
+      let b: { drop_response_once?: boolean };
+      try { b = JSON.parse(await readBody(req) || "{}"); } catch { return send(res, 400, { error: "invalid JSON" }); }
       if (typeof b.drop_response_once === "boolean") chaos.dropResponseOnce = b.drop_response_once;
       return send(res, 200, { chaos });
     }

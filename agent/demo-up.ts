@@ -49,6 +49,8 @@ function run(name: string, cmd: string, args: string[]) {
   return new Promise<void>((ok, fail) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     pipe(name, child);
+    // Tracked so ctrl-c during reset/seed/worker kills the step too.
+    children.push(child);
     child.on("error", fail);
     child.on("close", code => (code === 0 ? ok() : fail(new Error(`${[cmd, ...args].join(" ")} exited with ${code}`))));
   });
@@ -66,11 +68,23 @@ function start(name: string, cmd: string, args: string[], stdio: StdioOptions = 
   return child;
 }
 
+const alive = (c: ChildProcess) => c.exitCode === null && c.signalCode === null;
+
 function shutdown(code: number) {
   if (stopping) return;
   stopping = true;
-  for (const c of children) if (c.exitCode === null && c.signalCode === null) c.kill("SIGTERM");
-  setTimeout(() => process.exit(code), 400);
+  for (const c of children) if (alive(c)) c.kill("SIGTERM");
+  // Vite and the runner normally exit well inside this; anything still alive
+  // after it gets SIGKILL so a stuck child cannot hold the ports for the next run.
+  const started = Date.now();
+  const tick = setInterval(() => {
+    const left = children.filter(alive);
+    if (left.length === 0 || Date.now() - started > 1500) {
+      for (const c of left) { say("demo-up", `${c.spawnargs.slice(-1)[0]} did not stop; killing`); c.kill("SIGKILL"); }
+      clearInterval(tick);
+      process.exit(code);
+    }
+  }, 100);
 }
 process.on("SIGINT", () => { say("demo-up", "stopping"); shutdown(0); });
 process.on("SIGTERM", () => shutdown(0));
@@ -119,7 +133,9 @@ try {
   else start("runner", process.execPath, [...TSX, "agent/runner.ts"]);
   start("control", process.execPath, [...TSX, "agent/demo-control.ts"]);
   start("web", process.execPath, ["node_modules/vite/bin/vite.js", "--strictPort", "--clearScreen", "false"]);
-  if (!(await waitForPort(5173, 20_000))) throw new Error("the web app did not open :5173 within 20s");
+  for (const [port, what] of [[4310, "mock provider"], [4311, "demo control"], [5173, "web app"]] as const) {
+    if (!(await waitForPort(port, 20_000))) throw new Error(`the ${what} did not open :${port} within 20s`);
+  }
 
   const lines = [
     "",

@@ -28,14 +28,20 @@ export function saveToken(persona: string, token: string) {
   writeFileSync(tokenPath(persona), token);
 }
 
-export function connect(persona: string, opts: { host?: string; db?: string; fresh?: boolean } = {}): Promise<DbConnection> {
+// onDrop fires when an established connection closes. Long-running processes
+// pass a handler that exits, so a supervisor sees the failure instead of a
+// process that looks alive but can no longer reach the database.
+export function connect(persona: string, opts: { host?: string; db?: string; fresh?: boolean; onDrop?: (err?: Error) => void } = {}): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
+    let established = false;
     const builder = DbConnection.builder()
       .withUri(opts.host ?? HOST)
       .withDatabaseName(opts.db ?? DB)
       .withToken(opts.fresh ? undefined : loadToken(persona))
       .onConnectError((_ctx, err) => reject(err))
+      .onDisconnect((_ctx, err) => { if (established) opts.onDrop?.(err ?? undefined); })
       .onConnect((conn, _identity, token) => {
+        established = true;
         saveToken(persona, token);
         conn.subscriptionBuilder()
           .onApplied(() => resolve(conn))

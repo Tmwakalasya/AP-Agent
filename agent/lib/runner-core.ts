@@ -55,6 +55,12 @@ export async function runnerPass(conn: DbConnection, opts: RunnerOptions): Promi
       progressed = true;
       return;
     }
+    if (res.status >= 500) {
+      // A server-side error says nothing about whether the transfer exists; the key lookup on the next pass does.
+      await conn.reducers.recordPaymentOutcome({ requestId: r.id, idempotencyKey: key, outcome: "unknown", transferId: "", detail: `Provider error ${res.status}. Obligation stays reserved; will reconcile by key.` });
+      log(`#${r.id}: provider error ${res.status} → unknown (still reserved, same key on reconcile)`);
+      return;
+    }
     await conn.reducers.recordPaymentOutcome({ requestId: r.id, idempotencyKey: key, outcome: "failed", transferId: "", detail: `Provider refused (${res.status}): ${String(res.json.error ?? "")}. Still reserved until a controller reconciles.` });
     log(`#${r.id}: provider refused (${res.status}) → failed (still reserved)`);
     progressed = true;
