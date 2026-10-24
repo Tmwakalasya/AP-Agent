@@ -1,6 +1,6 @@
 # Remit-To contracts
 
-Implementation requirements for the live system, revised for the solo CalHacks 13.0 build. The offline reference is `module/rules.ts` and its tests. Anything described here that is not yet in `module/src/` is a target, not a claim.
+Implementation requirements for the live system, revised for the solo CalHacks 13.0 build. The offline reference is `module/rules.ts` and its tests. Everything in the tables, reducers and lifecycle sections below is implemented in `module/src/` and exercised by `agent/live.test.ts` against a fresh local database; the acceptance gates name the test that proves each one.
 
 ## Positioning
 
@@ -37,7 +37,7 @@ One builder. No owner table. The schedule is in `docs/plan.html`.
 
 | Table | Content and constraints |
 | --- | --- |
-| `actor` | `identity` (unique), `id`, `role` (`agent` / `ap_lead` / `controller` / `runner`), `approval_limit_cents`, `persona` label. Bound only by `bootstrap_persona`. |
+| `actor` | `identity` (unique), `id`, `role` (`agent` / `ap_lead` / `controller` / `runner` / `world`), `approval_limit_cents`, `persona` label. Bound only by `bootstrap_persona`. `world` seeds and attaches documents; it cannot approve or pay. |
 | `carrier` | id, name, authority (`active` / `revoked`), verified bank destination version. |
 | `factor` | id, name, verified contact, bank destination version. |
 | `assignment` | carrier, factor, effective_at, source NOA document id, released_at (null), verified_by. Only verified rows influence payment. |
@@ -56,7 +56,9 @@ Dropped from the earlier draft: `question`, `sim_clock`. Claude drafts the escal
 | Reducer | Caller | Behavior |
 | --- | --- | --- |
 | `bootstrap_persona(role)` | any unbound identity | First-claim binding of `ctx.sender` to a seeded persona of that role; refused if the sender is already bound or the persona is taken. |
-| `seed_world` | first bound controller | Three stories plus two filler clean loads, the March NOA assignment, all documents. Idempotent; refused if already seeded. |
+| `seed_world` | controller, world | Three stories plus two filler clean loads, the March NOA assignment, all documents. Idempotent; refused if already seeded. |
+| `attach_document_file` | controller, world | Records the content hash and rendered path of a seeded document. Re-attaching the same hash is a no-op; a different hash is refused because received evidence is immutable. |
+| `update_carrier_bank` | controller | Bumps a carrier's verified bank destination version (or marks a change pending). Any approval bound to the old version goes stale. |
 | `record_extraction` | agent | Typed fields for an existing document hash. Cannot touch assignments. |
 | `propose_settlement` | agent | Re-runs `evaluateSettlement` on trusted rows; writes `settlement` and `decision_log`. |
 | `request_payment` | agent, ap_lead | Re-checks policy; inserts `payment_request` whose unique `load_id` and `invoice_key` indexes form the atomic reservation. A refusal commits a `decision_log` row and makes no business mutation. |
@@ -106,17 +108,19 @@ AP approval ceiling: 500,000 cents, further restricted by the actor's limit. Con
 
 36 synthetic development cases (24 clean, 6 duplicate, 6 redirect) scored against `world/answer-key.json`, which the agent never reads. This is the evidence slide: 36/36 exact, 0/24 false holds, 0/12 unsafe requests. It is not a blind evaluation, not independent layouts, not a production catch rate. The blind set and the 30–50 live cases from the earlier draft are dropped for this build.
 
-## Acceptance gates still in scope
+## Acceptance gates
 
-| Gate | Check |
-| --- | --- |
-| Clean flow | Extract, propose, request as agent, approve as controller, runner moves to `submitted` then `simulated_settled`, live in two tabs. |
-| Duplicate race | Two concurrent `request_payment` calls for one load: one reservation, one committed refusal. |
-| Cross-load duplicate | Reuse the carrier/invoice key on another load: held. A different carrier's same number: allowed. |
-| Redirect | June request conflicts with verified March NOA: held, factor remains policy payee, NOA visible, escalation email drafted. |
-| Approval | AP self-approve refused. Agent approve refused by role. Controller approves. |
-| Stale approval | Change the verified destination before claiming; the old approval cannot dispatch. |
-| Crash after accept | Mock accepts; runner killed before `record_payment_outcome`; restart reconciles to one transfer and one `submitted` event. Recorded clip. |
-| Audit | Business refusal commits a `decision_log` row; business state unchanged; actor is `ctx.sender`. |
-| Evidence boundary | Wrong-load POD, nonexistent NOA, future evidence, malformed extraction, unknown currency: all hold. |
-| Scoring isolation | Agent cannot read expected outputs; missing cases fail. |
+`live` is `agent/live.test.ts` (12 tests, fresh database, five identities). `rules` is `module/rules.test.ts`. `scoring` is `world/scoring.test.ts`.
+
+| Gate | Check | Verified by |
+| --- | --- | --- |
+| Clean flow | Extract, propose, request as agent, approve as controller, runner moves to `submitted` then `simulated_settled`, live in two tabs. | live: "clean", "runner"; two-tab run on the board |
+| Duplicate race | Two concurrent `request_payment` calls for one load: one reservation, one committed refusal. | live: "duplicate race" |
+| Cross-load duplicate | Reuse the carrier/invoice key on another load: held. A different carrier's same number: allowed. | rules: "relabeled as another load", "another carrier"; module unique index on `invoice_key` |
+| Redirect | June request conflicts with verified March NOA: held, factor remains policy payee, NOA visible, escalation email drafted. | live: "redirect"; rules: "June redirect" |
+| Approval | AP self-approve refused. Agent approve refused by role. Controller approves. | live: "separation of duties"; rules: three approval tests |
+| Stale approval | Change the verified destination before claiming; the old approval cannot dispatch. | live: "stale approval" |
+| Crash after accept | Mock accepts; runner killed before `record_payment_outcome`; restart reconciles to one transfer and one `submitted` event. | live: "crash after accept"; `npm run demo:crash` |
+| Audit | Business refusal commits a `decision_log` row; business state unchanged; actor is `ctx.sender`. | live: "every refusal in this run"; 2.13 commit/rollback probe |
+| Evidence boundary | Wrong-load POD, nonexistent NOA, future evidence, malformed extraction, unknown currency: all hold. | rules: "wrong-load POD", "assignment evidence", "fail closed" |
+| Scoring isolation | Agent cannot read expected outputs; missing cases fail. | scoring: all three tests |

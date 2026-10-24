@@ -6,6 +6,8 @@
     "node": ">=22.18.0"
   },
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
     "test": "node --test module/*.test.ts world/*.test.ts",
     "test:live": "node --import tsx --test agent/live.test.ts",
     "demo": "node world/demo.ts",
@@ -18,7 +20,7 @@
     "runner": "npx tsx agent/runner.ts",
     "demo:crash": "npx tsx agent/runner.ts --once --crash-after-accept; npx tsx agent/runner.ts --once",
     "publish:local": "spacetime publish remit-to --server local --yes",
-    "reset": "spacetime publish remit-to --server local --delete-data=always --yes && spacetime generate --lang typescript --out-dir ./bindings --module-path ./module"
+    "reset": "spacetime publish remit-to --server local --delete-data=always --yes && spacetime generate --lang typescript --out-dir ./bindings --module-path ./module && rm -f agent/.cache/mock-provider.json"
   },
   "dependencies": {
     "spacetimedb": "2.13.*"
