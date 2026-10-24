@@ -11,7 +11,7 @@ export function projectReview(conn: DbConnection, loadId: string, invoiceDocumen
   const load = db.load.id.find(loadId); if (!load) return null;
   const carrier = db.carrier.id.find(load.carrierId); if (!carrier) return null;
   const invoiceDoc = db.document.id.find(invoiceDocumentId); if (!invoiceDoc) return null;
-  const extraction = db.extraction.documentId.find(invoiceDocumentId); if (!extraction) return null;
+  const extraction = [...db.extraction.iter()].find(e => e.documentId === invoiceDocumentId); if (!extraction) return null;
   return {
     as_of: new Date().toISOString(),
     load: { id: load.id, carrier_id: load.carrierId, rate_cents: Number(load.rateCents), delivered: load.delivered, rate_document_id: load.rateDocumentId, pod_document_id: load.podDocumentId ?? null },

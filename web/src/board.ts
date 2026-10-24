@@ -2,7 +2,8 @@ import type { Session } from "./stdb.ts";
 import { myActor } from "./stdb.ts";
 import { auditFor, documentsFor, items, lastActionBy, money, shortDate, clock, STATUS_LABEL } from "./model.ts";
 import type { Item, Status } from "./model.ts";
-import { checkApproval } from "../../module/rules.ts";
+import { checkApproval, RULE_LABELS } from "../../module/rules.ts";
+import type { RuleId } from "../../module/rules.ts";
 
 export type BoardOptions = { compact?: boolean; readOnly?: boolean };
 
@@ -12,18 +13,8 @@ const badgeClass = (s: Status) => ({
   pending: "pending", approved: "ok", submitting: "sub", submitted: "sub", simulated_settled: "settled",
 } as Record<Status, string>)[s];
 
-// Human labels for the policy rules. R10 is several sub-checks in rules.ts;
-// the board shows them as one chip and lists the reasons on demand.
-const CHECKS: Array<{ id: string; label: string }> = [
-  { id: "R2", label: "Payee matches verified assignment" },
-  { id: "R3", label: "No existing obligation for this load" },
-  { id: "R1", label: "Amount matches rate confirmation" },
-  { id: "R6", label: "Delivered, POD on file" },
-  { id: "R7", label: "Invoice, load and carrier agree" },
-  { id: "R8", label: "No unresolved bank change" },
-  { id: "R9", label: "Carrier authority active" },
-  { id: "R10", label: "Documents and fields valid" },
-];
+// Display order puts the two fraud/duplicate checks first.
+const CHECKS = (["R2", "R3", "R1", "R6", "R7", "R8", "R9", "R10"] as RuleId[]).map(id => ({ id, label: RULE_LABELS[id] }));
 const extractionFor = (db: Session["conn"]["db"], documentId: string | null | undefined) =>
   documentId ? [...db.extraction.iter()].find(e => e.documentId === documentId) : undefined;
 const STEPS: Array<[string, string]> = [["pending", "requested"], ["approved", "approved"], ["submitting", "claimed"], ["submitted", "submitted"], ["simulated_settled", "settled (mock)"]];
@@ -158,8 +149,8 @@ export class Board {
           <span>${esc(d.id)} · ${shortDate(d.receivedAt)}</span>
         </a>`).join("")}
       </div>
-      ${s?.explanation ? `<details class="prose" open><summary>Claude · why</summary><p>${esc(s.explanation)}</p></details>` : ""}
-      ${s?.decision === "hold" && s.escalationEmail ? `<details class="prose"><summary>Claude · drafted escalation email</summary><pre>${esc(s.escalationEmail)}</pre></details>` : ""}
+      ${s?.explanation ? `<details class="prose" open><summary>${s.explanation.startsWith("[template]") ? "Why · template text (Claude unavailable)" : "Why · written by Claude from the policy result"}</summary><p>${esc(s.explanation)}</p></details>` : ""}
+      ${s?.decision === "hold" && s.escalationEmail ? `<details class="prose"><summary>${s.explanation.startsWith("[template]") ? "Escalation email · template" : "Escalation email · drafted by Claude"}</summary><pre>${esc(s.escalationEmail)}</pre></details>` : ""}
     `;
   }
 

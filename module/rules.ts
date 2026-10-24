@@ -57,6 +57,18 @@ export type Decision = {
   question: string | null;
 };
 
+// Human labels for the rules. R10 covers several field checks under one id.
+export const RULE_LABELS: Record<RuleId, string> = {
+  R1: "Amount matches rate confirmation",
+  R2: "Payee matches verified assignment",
+  R3: "No existing obligation for this load",
+  R6: "Delivered, POD on file",
+  R7: "Invoice, load and carrier agree",
+  R8: "No unresolved bank change",
+  R9: "Carrier authority active",
+  R10: "Documents and fields valid",
+};
+
 export const AP_LIMIT_CENTS = 500_000;
 export const RATE_TOLERANCE_CENTS = 100;
 export const MIN_EXTRACTION_CONFIDENCE = 0.95;
