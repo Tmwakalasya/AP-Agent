@@ -6,3 +6,7 @@ dist/
 world/out/
 world/.tokens/
 agent/.cache/
+module/node_modules/
+web/node_modules/
+agent/node_modules/
+spacetime.local.json
