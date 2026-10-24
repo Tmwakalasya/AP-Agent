@@ -1,5 +1,5 @@
 import type { Session } from "./stdb.ts";
-import { myActor } from "./stdb.ts";
+import { DB, HOST, loadFromUrl, myActor, rememberLoad } from "./stdb.ts";
 import { auditFor, documentsFor, items, lastActionBy, money, shortDate, clock, STATUS_LABEL } from "./model.ts";
 import type { Item, Status } from "./model.ts";
 import { checkApproval, RULE_LABELS } from "../../module/rules.ts";
@@ -30,20 +30,34 @@ export class Board {
   constructor(private root: HTMLElement, private session: Session, private opts: BoardOptions = {}) {
     root.classList.add("board");
     if (opts.compact) root.classList.add("compact");
+    // The landing embed shares the page URL with the hero; only the full board follows ?load=.
+    if (!opts.compact) this.selected = loadFromUrl();
     root.addEventListener("click", e => this.onClick(e));
     session.onChange(() => this.render());
     this.render();
   }
 
+  // A full key (L-2037:D-inv-5521R) wins; a bare load id picks its primary invoice.
   private pick(list: Item[]): Item | undefined {
-    if (this.selected) { const hit = list.find(i => i.key === this.selected); if (hit) return hit; }
+    if (this.selected) {
+      const hit = list.find(i => i.key === this.selected) ?? list.find(i => i.loadId === this.selected && !i.rebill) ?? list.find(i => i.loadId === this.selected);
+      if (hit) return hit;
+    }
     return list.find(i => i.status === "hold") ?? list[0];
+  }
+
+  private select(key: string) {
+    this.selected = key; this.notice = null;
+    if (!this.opts.compact) { rememberLoad(key); this.root.dispatchEvent(new CustomEvent("remit-to:select", { detail: key, bubbles: true })); }
+    this.render();
   }
 
   render() {
     const { session } = this;
     if (session.status !== "live") {
-      this.root.innerHTML = `<div class="b-empty">${session.status === "error" ? `connection error · ${esc(session.error)}` : "connecting to spacetimedb…"}</div>`;
+      this.root.innerHTML = session.status === "error"
+        ? `<div class="b-empty"><b>Not connected.</b> ${esc(session.error)}<small>Expected SpacetimeDB at <code>${esc(HOST)}</code>, database <code>${esc(DB)}</code>. Start it with <code>spacetime start</code>, then <code>npm run reset</code>.</small></div>`
+        : `<div class="b-empty">connecting to spacetimedb…</div>`;
       return;
     }
     const list = items(session.conn);
@@ -60,7 +74,7 @@ export class Board {
     this.root.innerHTML = `
       <div class="b-col b-left">
         <div class="b-head"><span>Loads</span><span>${list.length}</span></div>
-        ${list.length === 0 ? `<div class="b-muted">no loads yet${this.canSeed() ? " · seed the world →" : ""}</div>` : ""}
+        ${list.length === 0 ? `<div class="b-muted">no loads yet${this.canSeed() ? " · seed the world →" : " · run <code>npm run seed</code>"}</div>` : ""}
         ${list.map(i => `
           <div class="load ${sel?.key === i.key ? "active" : ""} ${this.flashing.has(i.key) ? "flash" : ""}" data-key="${esc(i.key)}">
             <span class="load-id">${esc(i.loadId)}${i.rebill ? ` <em>re-bill</em>` : ""}<small>${esc(i.carrier?.name ?? "")} · ${money(i.load.rateCents)}</small></span>
@@ -228,7 +242,7 @@ export class Board {
   private async onClick(e: Event) {
     const t = (e.target as HTMLElement).closest<HTMLElement>("[data-key],[data-act]");
     if (!t) return;
-    if (t.dataset.key) { this.selected = t.dataset.key; this.notice = null; this.render(); return; }
+    if (t.dataset.key) { this.select(t.dataset.key); return; }
     if (this.opts.readOnly || this.busy) return;
     const list = items(this.session.conn);
     const sel = this.pick(list);

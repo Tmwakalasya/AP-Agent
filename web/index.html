@@ -61,21 +61,24 @@
         <div class="ln"><span>policy payee</span><b>F-01 Meridian</b></div><div class="ln"><span>requested</span><b style="color:var(--hold)">carrier C-301</b></div>
         <div class="ln"><span>NOA effective</span><b>2026-03-02</b></div><div class="ln"><span>email "updated banking"</span><b>unverified</b></div><div class="ln"><span>escalation</span><b>drafted → factor</b></div></div></div>
       <div class="body"><div class="label"><span>Redirect</span><span class="res hold">■ Hold</span></div>
-        <h3>June invoice vs. March NOA</h3><p>A June invoice and an "updated banking" email ask us to pay the carrier directly. A verified March assignment says the factor. An unverified email cannot replace a verified payment instruction.</p></div>
+        <h3>June invoice vs. March NOA</h3><p>A June invoice and an "updated banking" email ask us to pay the carrier directly. A verified March assignment says the factor. An unverified email cannot replace a verified payment instruction.</p>
+        <a class="open" href="/app/?persona=controller&load=L-2041">Open L-2041 on the board →</a></div>
     </div>
     <div class="story reveal" style="transition-delay:.1s">
       <div class="shot"><img src="/shots/duplicate.png" alt="" onerror="this.remove()"><div class="ph"><div class="big"><span>L-2037 · Blue Mesa · re-bill</span><span style="color:var(--hold)">■ HOLD R3</span></div>
         <div class="ln"><span>existing obligation</span><b>INV-5521 · reserved</b></div><div class="ln"><span>new invoice</span><b style="color:var(--hold)">INV-5521-R</b></div>
         <div class="ln"><span>concurrent requests</span><b>2 → 1 reserved · 1 refused</b></div><div class="ln"><span>refusal</span><b>committed to decision_log</b></div></div></div>
       <div class="body"><div class="label"><span>Duplicate</span><span class="res hold">■ Hold</span></div>
-        <h3>Same load, new invoice number</h3><p>Two requests race for the same load. Unique indexes inside one transaction leave exactly one reservation. The loser's refusal is a committed audit row, not an exception.</p></div>
+        <h3>Same load, new invoice number</h3><p>Two requests race for the same load. Unique indexes inside one transaction leave exactly one reservation. The loser's refusal is a committed audit row, not an exception.</p>
+        <a class="open" href="/app/?persona=controller&load=L-2037:D-inv-5521R">Open the re-bill on the board →</a></div>
     </div>
     <div class="story reveal" style="transition-delay:.2s">
       <div class="shot"><img src="/shots/clean.png" alt="" onerror="this.remove()"><div class="ph"><div class="big"><span>L-2037 · Blue Mesa</span><span style="color:var(--ok)">□ APPROVED</span></div>
         <div class="ln"><span>rate con</span><b>$1,850.00</b></div><div class="ln"><span>invoice</span><b>$1,850.00 · INV-5521</b></div><div class="ln"><span>POD</span><b>signed · Jun 9</b></div>
         <div class="ln"><span>requested by</span><b>agent</b></div><div class="ln"><span>approved by</span><b style="color:var(--ok)">controller · not requester</b></div></div></div>
       <div class="body"><div class="label"><span>Clean</span><span class="res">□ Approved</span></div>
-        <h3>Match, request, approve, submit</h3><p>Invoice matches rate con and POD. The agent requests; a different human approves; the runner submits with a persisted idempotency key. Status moves to <span class="mono">submitted</span>, then <span class="mono">simulated_settled</span>, live.</p></div>
+        <h3>Match, request, approve, submit</h3><p>Invoice matches rate con and POD. The agent requests; a different human approves; the runner submits with a persisted idempotency key. Status moves to <span class="mono">submitted</span>, then <span class="mono">simulated_settled</span>, live.</p>
+        <a class="open" href="/app/?persona=controller&load=L-2037">Open L-2037 on the board →</a></div>
     </div>
   </div>
 </div></section>

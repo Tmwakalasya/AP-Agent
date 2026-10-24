@@ -5,8 +5,13 @@ const ROLE: Record<PersonaKey, string | null> = {
   viewer: null, agent: "agent", ap: "ap_lead", controller: "controller", runner: "runner", world: "world",
 };
 
-export const HOST = (import.meta as { env?: Record<string, string> }).env?.VITE_SPACETIME_HOST ?? "ws://127.0.0.1:3000";
-export const DB = (import.meta as { env?: Record<string, string> }).env?.VITE_SPACETIME_DB ?? "remit-to";
+const env = (import.meta as { env?: Record<string, string> }).env ?? {};
+const params = new URLSearchParams(location.search);
+// ?host= and ?db= let one build point at another database (a second local
+// instance, maincloud) without rebuilding. Tokens are scoped to that target.
+export const HOST = params.get("host") ?? env.VITE_SPACETIME_HOST ?? "ws://127.0.0.1:3000";
+export const DB = params.get("db") ?? env.VITE_SPACETIME_DB ?? "remit-to";
+const DEFAULT_TARGET = HOST === "ws://127.0.0.1:3000" && DB === "remit-to";
 
 const TABLES = ["actor", "carrier", "factor", "assignment", "load", "document", "extraction",
   "settlement", "payment_request", "approval", "decision_log"];
@@ -23,14 +28,36 @@ export type Session = {
 };
 
 export function personaFromUrl(): PersonaKey {
-  const p = new URLSearchParams(location.search).get("persona") ?? "viewer";
+  const p = params.get("persona") ?? "viewer";
   return (p in ROLE ? p : "viewer") as PersonaKey;
 }
 
+// ?load=L-2041 or ?load=L-2037:D-inv-5521R preselects a board row.
+export function loadFromUrl(): string | null {
+  return params.get("load");
+}
+
+// Rewrites ?load= in place so a refresh or a persona-tab switch keeps the row.
+export function rememberLoad(key: string) {
+  const url = new URL(location.href);
+  url.searchParams.set("load", key);
+  history.replaceState(null, "", url);
+}
+
+// Builds a same-target link for another persona, carrying ?load= along.
+export function personaHref(persona: PersonaKey, load?: string | null): string {
+  const url = new URL("/app/", location.origin);
+  url.searchParams.set("persona", persona);
+  if (load) url.searchParams.set("load", load);
+  if (!DEFAULT_TARGET) { url.searchParams.set("host", HOST); url.searchParams.set("db", DB); }
+  return url.pathname + url.search;
+}
+
 // Each persona keeps its own token in localStorage, so two tabs with different
-// ?persona= values are two different identities to the database.
+// ?persona= values are two different identities to the database. A token from
+// one server is meaningless on another, so non-default targets get their own key.
 export function connect(persona: PersonaKey): Session {
-  const key = `remit-to.token.${persona}`;
+  const key = DEFAULT_TARGET ? `remit-to.token.${persona}` : `remit-to.token.${persona}@${DB}@${HOST}`;
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach(cb => cb());
   const session: Session = {
