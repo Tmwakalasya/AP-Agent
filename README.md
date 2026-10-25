@@ -8,6 +8,8 @@ Claude extracts and explains. Deterministic policy decides. SpacetimeDB enforces
 
 Built for **Cal Hacks 13.0** with TypeScript, Claude, SpacetimeDB, Node.js, and Vite. **All data is synthetic. The payment provider is a labeled mock; no funds move.**
 
+**Live:** [remit-to.pages.dev](https://remit-to.pages.dev/) (landing with a read-only board) · [the board](https://remit-to.pages.dev/app/?persona=viewer&load=L-2041). The database runs on SpacetimeDB Maincloud; the approval and runner personas are driven from the author's machine during judging.
+
 ## What it demonstrates
 
 | Scenario | Decision |
@@ -91,6 +93,21 @@ Open the controller tab first, then the AP lead tab:
 The services use ports `3000`, `4310`, `4311`, and `5173`. Press **Ctrl+C** to stop processes started by the demo command. Follow the [two-minute demo guide](docs/demo-script.md) for the presentation sequence and recovery clip.
 
 > **Updating an older demo:** the extraction schema now requires `load_reference`. Restart with the default `npm run demo:up` to reset and reseed before using the regenerated clients. Existing demo data is not migrated.
+
+### Deploying against Maincloud
+
+The agent processes read `SPACETIME_HOST` and `SPACETIME_DB`; the web build reads `VITE_SPACETIME_HOST` and `VITE_SPACETIME_DB`. Persona tokens are kept per target under `agent/.tokens/`, so local and Maincloud identities do not mix.
+
+```bash
+spacetime login && spacetime publish remit-to --server maincloud --yes
+export SPACETIME_HOST=wss://maincloud.spacetimedb.com SPACETIME_DB=remit-to
+npx tsx agent/seed.ts && npx tsx agent/worker.ts --leave-ready=L-2033,L-2029
+VITE_SPACETIME_HOST=$SPACETIME_HOST VITE_SPACETIME_DB=$SPACETIME_DB npm run build
+npx wrangler pages deploy dist --project-name remit-to
+npm run provider & npm run runner      # settle approvals while judging; the mock provider never moves funds
+```
+
+The board's demo controls (race, agent approve) are local-only and hidden on any other target.
 
 ## Verification
 

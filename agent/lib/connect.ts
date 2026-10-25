@@ -10,6 +10,10 @@ const tokenDir = join(here, "..", ".tokens");
 
 export const HOST = process.env.SPACETIME_HOST ?? "ws://127.0.0.1:3000";
 export const DB = process.env.SPACETIME_DB ?? "remit-to";
+// A token is only valid on the server that issued it, so a non-default target
+// keeps its own set of persona tokens instead of presenting local ones.
+const DEFAULT_TARGET = HOST === "ws://127.0.0.1:3000" && DB === "remit-to";
+const targetDir = DEFAULT_TARGET ? tokenDir : join(tokenDir, `${DB}@${HOST.replace(/[^\w.-]+/g, "_")}`);
 
 const ALL_TABLES = [
   "actor", "carrier", "factor", "assignment", "load", "document", "extraction",
@@ -18,13 +22,13 @@ const ALL_TABLES = [
 
 // One token file per persona so each process keeps its own identity across
 // restarts. Tokens are local demo credentials only.
-function tokenPath(persona: string) { return join(tokenDir, `${persona}.token`); }
+function tokenPath(persona: string) { return join(targetDir, `${persona}.token`); }
 export function loadToken(persona: string): string | undefined {
   const p = tokenPath(persona);
   return existsSync(p) ? readFileSync(p, "utf8").trim() : undefined;
 }
 export function saveToken(persona: string, token: string) {
-  mkdirSync(tokenDir, { recursive: true });
+  mkdirSync(targetDir, { recursive: true });
   writeFileSync(tokenPath(persona), token);
 }
 
